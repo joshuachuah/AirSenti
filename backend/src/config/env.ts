@@ -16,6 +16,8 @@ const envSchema = z.object({
   // External APIs
   OPENSKY_USERNAME: z.string().optional(),
   OPENSKY_PASSWORD: z.string().optional(),
+  OPENSKY_CLIENT_ID: z.string().optional(),
+  OPENSKY_CLIENT_SECRET: z.string().optional(),
   HUGGINGFACE_API_KEY: z.string().optional(),
   NOAA_API_KEY: z.string().optional(),
   NEWS_API_KEY: z.string().optional(),
