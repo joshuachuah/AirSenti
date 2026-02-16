@@ -17,8 +17,6 @@ import {
   Database,
 } from 'lucide-react';
 import {
-  AreaChart,
-  Area,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -46,16 +44,6 @@ import {
   formatAltitudeFeet,
   formatSpeed,
 } from '../utils';
-
-// ---------------------------------------------------------------------------
-// Sparkline data generators (simulated for demo when no time-series API)
-// ---------------------------------------------------------------------------
-function generateSparkline(points: number, base: number, variance: number) {
-  return Array.from({ length: points }, (_, i) => ({
-    t: i,
-    v: Math.max(0, base + (Math.random() - 0.45) * variance),
-  }));
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -137,7 +125,6 @@ function MetricTile({
   value,
   sub,
   color,
-  sparkData,
   delay,
 }: {
   icon: typeof Plane;
@@ -145,7 +132,6 @@ function MetricTile({
   value: string | number;
   sub?: string;
   color: string;
-  sparkData?: { t: number; v: number }[];
   delay: number;
 }) {
   const colorVars: Record<string, { text: string; bg: string; fill: string; stroke: string }> = {
@@ -181,29 +167,6 @@ function MetricTile({
       className="stat-card group opacity-0 animate-slide-up relative overflow-hidden"
       style={{ animationDelay: `${delay}ms` }}
     >
-      {/* Sparkline background */}
-      {sparkData && (
-        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sparkData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id={`spark-${color}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={c.fill} stopOpacity={1} />
-                  <stop offset="100%" stopColor={c.fill} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area
-                type="monotone"
-                dataKey="v"
-                stroke={c.stroke}
-                strokeWidth={1.5}
-                fill={`url(#spark-${color})`}
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
 
       <div className="relative z-10">
         <div className="flex items-center gap-2.5 mb-4">
@@ -357,12 +320,6 @@ export function Overview() {
     if (allAnomalies.length > 3) return 1;
     return 0;
   }, [allAnomalies, emergencies]);
-
-  // Generate sparkline data
-  const sparkFlights = useMemo(() => generateSparkline(20, stats?.flights_tracked || 45, 15), [stats?.flights_tracked]);
-  const sparkAnomalies = useMemo(() => generateSparkline(20, stats?.active_anomalies || 3, 4), [stats?.active_anomalies]);
-  const sparkIncidents = useMemo(() => generateSparkline(20, stats?.incidents_today || 1, 2), [stats?.incidents_today]);
-  const sparkATC = useMemo(() => generateSparkline(20, stats?.atc_communications_processed || 12, 8), [stats?.atc_communications_processed]);
 
   // Live feed items built from real data
   const feedItems = useMemo(() => {
@@ -519,7 +476,6 @@ export function Overview() {
           value={stats?.flights_tracked || aircraft.length}
           sub="15s refresh"
           color="radar"
-          sparkData={sparkFlights}
           delay={80}
         />
         <MetricTile
@@ -528,7 +484,6 @@ export function Overview() {
           value={stats?.active_anomalies || allAnomalies.length}
           sub={allAnomalies.length > 0 ? `${allAnomalies.filter((a) => a.severity === 'high' || a.severity === 'critical').length} high+` : 'clear'}
           color="amber"
-          sparkData={sparkAnomalies}
           delay={130}
         />
         <MetricTile
@@ -537,7 +492,6 @@ export function Overview() {
           value={stats?.incidents_today || 0}
           sub={incidents?.length ? `${incidents.length} total` : 'none'}
           color="red"
-          sparkData={sparkIncidents}
           delay={180}
         />
         <MetricTile
@@ -546,7 +500,6 @@ export function Overview() {
           value={stats?.atc_communications_processed || 0}
           sub="transcripts"
           color="blue"
-          sparkData={sparkATC}
           delay={230}
         />
       </div>
@@ -641,7 +594,7 @@ export function Overview() {
                         fontFamily: 'Fira Code',
                         color: '#9ca3af',
                       }}
-                      cursor={{ fill: 'rgba(0,255,200,0.03)' }}
+                      cursor={false}
                     />
                     <Bar
                       dataKey="flights"
