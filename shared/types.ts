@@ -40,6 +40,94 @@ export interface FlightPathPoint {
   on_ground: boolean;
 }
 
+// Aircraft Metadata (from HF Datasets / OpenSky DB)
+export interface AircraftMetadata {
+  icao24: string;
+  registration: string | null;
+  manufacturerIcao: string | null;
+  manufacturerName: string | null;
+  model: string | null;
+  typecode: string | null;
+  serialNumber: string | null;
+  icaoAircraftType: string | null;
+  operator: string | null;
+  operatorCallsign: string | null;
+  operatorIcao: string | null;
+  owner: string | null;
+  categoryDescription: string | null;
+  built: string | null;
+  firstFlightDate: string | null;
+  engines: string | null;
+}
+
+export interface EnrichedAircraft extends Aircraft {
+  metadata?: AircraftMetadata;
+}
+
+// Historical Incident (ASRS Aviation Safety Reports)
+export interface HistoricalIncident {
+  id: string;
+  acnNumber: string;
+  date: string | null;
+  localTimeOfDay: string | null;
+  localeReference: string | null;
+  stateReference: string | null;
+  altitudeMsl: string | null;
+  flightConditions: string | null;
+  light: string | null;
+  aircraftOperator: string | null;
+  aircraftMakeModel: string | null;
+  flightPhase: string | null;
+  anomaly: string | null;
+  result: string | null;
+  contributingFactors: string | null;
+  primaryProblem: string | null;
+  narrative: string;
+  synopsis: string;
+  humanFactors: string | null;
+  source: 'asrs';
+}
+
+export interface HistoricalIncidentSearchResult {
+  incidents: HistoricalIncident[];
+  total: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+// ATC Dataset Entry (from HF Datasets)
+export interface ATCDatasetEntry {
+  id: string;
+  text: string;
+  source: string;
+}
+
+export interface ATCDatasetSearchResult {
+  entries: ATCDatasetEntry[];
+  total: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+// HF Datasets Service Status
+export interface DatasetServiceStatus {
+  aircraftMetadata: {
+    loaded: boolean;
+    count: number;
+    lastUpdated: string | null;
+  };
+  historicalIncidents: {
+    loaded: boolean;
+    seedCount: number;
+    totalAvailable: number;
+    lastUpdated: string | null;
+  };
+  atcTranscripts: {
+    available: boolean;
+    totalEntries: number;
+  };
+}
+
 // Anomaly Detection Types
 export type AnomalyType = 
   | 'altitude_drop'
@@ -232,6 +320,8 @@ export interface DashboardStats {
   active_anomalies: number;
   incidents_today: number;
   atc_communications_processed: number;
+  dataset_aircraft_loaded: number;
+  dataset_incidents_loaded: number;
   last_updated: string;
 }
 

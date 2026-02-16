@@ -16,9 +16,11 @@ import {
   processNaturalLanguageQuery,
   generateEmbeddings,
 } from './services/ai-inference';
+import { hfDatasetsClient } from './services/hf-datasets';
 import type {
   APIResponse,
   Aircraft,
+  EnrichedAircraft,
   FlightAnomaly,
   Incident,
   DashboardStats,
@@ -62,12 +64,14 @@ flights.get('/', async (c) => {
     const aircraft = await openSkyClient.getAllStates();
     
     // Run anomaly detection on all aircraft
-    const anomalies = detectAnomaliesBatch(aircraft.slice(0, limit));
-    
-    const response: APIResponse<{ aircraft: Aircraft[]; anomalies: FlightAnomaly[] }> = {
+    const limited = aircraft.slice(0, limit);
+    const anomalies = detectAnomaliesBatch(limited);
+    const enriched = hfDatasetsClient.enrichAircraftBatch(limited);
+
+    const response: APIResponse<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }> = {
       success: true,
       data: {
-        aircraft: aircraft.slice(0, limit),
+        aircraft: enriched,
         anomalies,
       },
       meta: {
@@ -111,10 +115,11 @@ flights.get('/area', async (c) => {
     const bbox: BoundingBox = { min_lat: minLat, max_lat: maxLat, min_lon: minLon, max_lon: maxLon };
     const aircraft = await openSkyClient.getStatesByBoundingBox(bbox);
     const anomalies = detectAnomaliesBatch(aircraft);
-    
+    const enriched = hfDatasetsClient.enrichAircraftBatch(aircraft);
+
     return c.json({
       success: true,
-      data: { aircraft, anomalies },
+      data: { aircraft: enriched, anomalies },
       meta: { total: aircraft.length },
     });
   } catch (error) {
@@ -143,10 +148,11 @@ flights.get('/radius', async (c) => {
     const circle: GeoCircle = { latitude: lat, longitude: lon, radius_nm: radiusNm };
     const aircraft = await openSkyClient.getStatesByRadius(circle);
     const anomalies = detectAnomaliesBatch(aircraft);
-    
+    const enriched = hfDatasetsClient.enrichAircraftBatch(aircraft);
+
     return c.json({
       success: true,
-      data: { aircraft, anomalies },
+      data: { aircraft: enriched, anomalies },
       meta: { total: aircraft.length },
     });
   } catch (error) {
@@ -172,10 +178,11 @@ flights.get('/:icao24', async (c) => {
     }
     
     const anomalies = detectAnomalies(aircraft[0]);
-    
+    const enriched = hfDatasetsClient.enrichAircraft(aircraft[0]);
+
     return c.json({
       success: true,
-      data: { aircraft: aircraft[0], anomalies },
+      data: { aircraft: enriched, anomalies },
     });
   } catch (error) {
     console.error('Error fetching flight:', error);
@@ -645,6 +652,7 @@ app.post('/api/query', async (c) => {
 app.get('/api/dashboard/stats', async (c) => {
   try {
     // Get current counts
+    const datasetStatus = hfDatasetsClient.getStatus();
     const stats: DashboardStats = {
       flights_tracked: 0,
       active_anomalies: anomalyStore.filter(
@@ -654,6 +662,8 @@ app.get('/api/dashboard/stats', async (c) => {
         i => new Date(i.occurred_at).toDateString() === new Date().toDateString()
       ).length,
       atc_communications_processed: 156,
+      dataset_aircraft_loaded: datasetStatus.aircraftMetadata.count,
+      dataset_incidents_loaded: datasetStatus.historicalIncidents.seedCount,
       last_updated: new Date().toISOString(),
     };
     
@@ -704,6 +714,170 @@ app.post('/api/embeddings', async (c) => {
     }, 500);
   }
 });
+
+// ============================================
+// HF Datasets Endpoints
+// ============================================
+
+const datasets = new Hono();
+
+// Dataset service status
+datasets.get('/status', (c) => {
+  const status = hfDatasetsClient.getStatus();
+  return c.json({ success: true, data: status });
+});
+
+// Aircraft metadata lookup by ICAO24
+datasets.get('/aircraft/:icao24', (c) => {
+  const icao24 = c.req.param('icao24');
+  const metadata = hfDatasetsClient.lookupAircraft(icao24);
+
+  if (!metadata) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: `No metadata for ${icao24}` },
+    }, 404);
+  }
+
+  return c.json({ success: true, data: metadata });
+});
+
+// Search aircraft metadata
+datasets.get('/aircraft', (c) => {
+  const registration = c.req.query('registration');
+  const typecode = c.req.query('typecode');
+  const manufacturer = c.req.query('manufacturer');
+  const limit = parseInt(c.req.query('limit') || '20');
+
+  const results = hfDatasetsClient.searchAircraft({
+    registration: registration || undefined,
+    typecode: typecode || undefined,
+    manufacturer: manufacturer || undefined,
+    limit,
+  });
+
+  return c.json({
+    success: true,
+    data: results,
+    meta: { total: results.length },
+  });
+});
+
+// Search historical incidents
+datasets.get('/incidents/search', async (c) => {
+  try {
+    const query = c.req.query('q') || '';
+    const offset = parseInt(c.req.query('offset') || '0');
+    const limit = parseInt(c.req.query('limit') || '20');
+
+    const results = await hfDatasetsClient.searchIncidents(query, offset, limit);
+    return c.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error searching historical incidents:', error);
+    return c.json({
+      success: false,
+      error: { code: 'SEARCH_ERROR', message: 'Failed to search historical incidents' },
+    }, 500);
+  }
+});
+
+// Get historical incident by ID
+datasets.get('/incidents/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const incident = await hfDatasetsClient.getHistoricalIncident(id);
+
+    if (!incident) {
+      return c.json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Historical incident ${id} not found` },
+      }, 404);
+    }
+
+    return c.json({ success: true, data: incident });
+  } catch (error) {
+    console.error('Error fetching historical incident:', error);
+    return c.json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: 'Failed to fetch historical incident' },
+    }, 500);
+  }
+});
+
+// Browse historical incidents (paginated)
+datasets.get('/incidents', async (c) => {
+  try {
+    const offset = parseInt(c.req.query('offset') || '0');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const primaryProblem = c.req.query('primary_problem');
+    const flightPhase = c.req.query('flight_phase');
+
+    const results = await hfDatasetsClient.browseIncidents({
+      offset,
+      limit,
+      primaryProblem: primaryProblem || undefined,
+      flightPhase: flightPhase || undefined,
+    });
+
+    return c.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error browsing historical incidents:', error);
+    return c.json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: 'Failed to fetch historical incidents' },
+    }, 500);
+  }
+});
+
+// Get ATC transcript entries
+datasets.get('/atc', async (c) => {
+  try {
+    const offset = parseInt(c.req.query('offset') || '0');
+    const limit = parseInt(c.req.query('limit') || '20');
+
+    const results = await hfDatasetsClient.getATCTranscripts(offset, limit);
+    return c.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error fetching ATC transcripts:', error);
+    return c.json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: 'Failed to fetch ATC transcripts' },
+    }, 500);
+  }
+});
+
+// Search ATC transcripts
+datasets.get('/atc/search', async (c) => {
+  try {
+    const query = c.req.query('q') || '';
+    const offset = parseInt(c.req.query('offset') || '0');
+    const limit = parseInt(c.req.query('limit') || '20');
+
+    const results = await hfDatasetsClient.searchATCTranscripts(query, offset, limit);
+    return c.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error searching ATC transcripts:', error);
+    return c.json({
+      success: false,
+      error: { code: 'SEARCH_ERROR', message: 'Failed to search ATC transcripts' },
+    }, 500);
+  }
+});
+
+app.route('/api/datasets', datasets);
+
+// ============================================
+// Initialize HF Datasets Service
+// ============================================
+
+(async () => {
+  try {
+    await hfDatasetsClient.initialize();
+    console.log('HF Datasets service initialized');
+  } catch (error) {
+    console.error('HF Datasets initialization error:', error);
+  }
+})();
 
 // ============================================
 // Start Server

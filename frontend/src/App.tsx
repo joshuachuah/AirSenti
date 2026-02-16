@@ -3,12 +3,12 @@
 // ============================================
 
 import { useState, useEffect } from 'react';
-import { 
-  Plane, 
-  AlertTriangle, 
-  Radio, 
-  FileText, 
-  Search, 
+import {
+  Plane,
+  AlertTriangle,
+  Radio,
+  FileText,
+  Search,
   Activity,
   Radar,
   Globe,
@@ -24,18 +24,27 @@ import {
   ExternalLink,
   RefreshCw,
   Settings,
-  Bell
+  Bell,
+  Database,
+  ChevronLeft
 } from 'lucide-react';
-import { 
-  useDashboardStats, 
-  useFlights, 
-  useAnomalies, 
+import {
+  useDashboardStats,
+  useFlights,
+  useAnomalies,
   useIncidents,
   useLiveATC,
   useNaturalQuery,
-  type Aircraft,
+  useDatasetStatus,
+  useHistoricalIncidents,
+  useHistoricalIncidentSearch,
+  useATCDataset,
+  useATCDatasetSearch,
+  type EnrichedAircraft,
   type FlightAnomaly,
-  type Incident
+  type Incident,
+  type HistoricalIncident,
+  type ATCDatasetEntry
 } from './api/hooks';
 import {
   cn,
@@ -159,10 +168,11 @@ function StatsCard({
 // Flight Card Component
 // ============================================
 
-function FlightCard({ aircraft, anomaly }: { aircraft: Aircraft; anomaly?: FlightAnomaly }) {
+function FlightCard({ aircraft, anomaly }: { aircraft: EnrichedAircraft; anomaly?: FlightAnomaly }) {
   const squawkInfo = getSquawkInfo(aircraft.squawk);
   const hasEmergency = isEmergencySquawk(aircraft.squawk);
-  
+  const meta = aircraft.metadata;
+
   return (
     <div className={cn(
       'p-4 rounded-lg border transition-all hover:border-radar-500/50',
@@ -175,7 +185,7 @@ function FlightCard({ aircraft, anomaly }: { aircraft: Aircraft; anomaly?: Fligh
             'p-2 rounded-lg',
             hasEmergency ? 'bg-red-500/20' : 'bg-radar-500/20'
           )}>
-            <Plane 
+            <Plane
               className={cn('w-5 h-5', hasEmergency ? 'text-red-400' : 'text-radar-400')}
               style={{ transform: `rotate(${aircraft.true_track || 0}deg)` }}
             />
@@ -184,24 +194,34 @@ function FlightCard({ aircraft, anomaly }: { aircraft: Aircraft; anomaly?: Fligh
             <div className="font-display font-bold text-lg">
               {aircraft.callsign || aircraft.icao24.toUpperCase()}
             </div>
-            <div className="text-xs text-gray-500 font-mono">{aircraft.icao24.toUpperCase()}</div>
+            <div className="text-xs text-gray-500 font-mono">
+              {aircraft.icao24.toUpperCase()}
+              {meta?.registration && ` / ${meta.registration}`}
+            </div>
+            {meta && (meta.model || meta.manufacturerName) && (
+              <div className="text-xs text-radar-400 font-mono mt-0.5">
+                {meta.typecode && `${meta.typecode} `}
+                {meta.model || meta.manufacturerName || ''}
+                {meta.operator && ` (${meta.operator})`}
+              </div>
+            )}
           </div>
         </div>
-        
+
         {squawkInfo && (
           <div className="px-2 py-1 bg-red-500/20 border border-red-500/50 rounded text-xs font-bold text-red-400 animate-pulse">
             {aircraft.squawk} - {squawkInfo.name}
           </div>
         )}
-        
+
         {anomaly && !hasEmergency && (
           <div className={cn('px-2 py-1 border rounded text-xs font-medium', getSeverityBg(anomaly.severity), getSeverityColor(anomaly.severity))}>
             {getAnomalyLabel(anomaly.type)}
           </div>
         )}
       </div>
-      
-      <div className="grid grid-cols-4 gap-4 text-sm">
+
+      <div className={cn('grid gap-4 text-sm', meta?.typecode ? 'grid-cols-5' : 'grid-cols-4')}>
         <div>
           <div className="text-gray-500 text-xs mb-1">ALTITUDE</div>
           <div className="font-mono text-gray-200">{formatAltitudeFeet(aircraft.baro_altitude)}</div>
@@ -218,6 +238,12 @@ function FlightCard({ aircraft, anomaly }: { aircraft: Aircraft; anomaly?: Fligh
           <div className="text-gray-500 text-xs mb-1">ORIGIN</div>
           <div className="font-mono text-gray-200 truncate">{aircraft.origin_country}</div>
         </div>
+        {meta?.typecode && (
+          <div>
+            <div className="text-gray-500 text-xs mb-1">TYPE</div>
+            <div className="font-mono text-gray-200 truncate">{meta.typecode}</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -264,6 +290,12 @@ function AnomalyCard({ anomaly }: { anomaly: FlightAnomaly }) {
 // ============================================
 
 function IncidentCard({ incident }: { incident: Incident }) {
+  const [showSimilar, setShowSimilar] = useState(false);
+  const { data: similar } = useHistoricalIncidentSearch(
+    incident.title,
+    { limit: 3, enabled: showSimilar }
+  );
+
   return (
     <div className="p-4 bg-sky-dark/50 border border-sky-border rounded-lg hover:border-radar-500/30 transition-colors">
       <div className="flex items-start justify-between mb-2">
@@ -276,10 +308,10 @@ function IncidentCard({ incident }: { incident: Incident }) {
         </span>
         <span className="text-xs text-gray-500">{formatRelativeTime(incident.occurred_at)}</span>
       </div>
-      
+
       <h4 className="font-semibold text-gray-200 mb-1">{incident.title}</h4>
       <p className="text-sm text-gray-400 line-clamp-2 mb-3">{incident.description}</p>
-      
+
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 text-gray-500">
           <MapPin className="w-4 h-4" />
@@ -289,6 +321,26 @@ function IncidentCard({ incident }: { incident: Incident }) {
           {incident.source.toUpperCase()}
         </span>
       </div>
+
+      <button
+        onClick={() => setShowSimilar(!showSimilar)}
+        className="mt-3 flex items-center gap-1 text-xs text-radar-400 hover:text-radar-300 transition-colors"
+      >
+        <Database className="w-3 h-3" />
+        {showSimilar ? 'Hide' : 'Find'} Similar Historical Reports
+      </button>
+
+      {showSimilar && similar?.incidents && similar.incidents.length > 0 && (
+        <div className="mt-2 space-y-2 border-t border-sky-border pt-2">
+          {similar.incidents.map((hi: HistoricalIncident) => (
+            <div key={hi.id} className="text-xs text-gray-400 p-2 bg-sky-dark/30 rounded">
+              <span className="text-gray-300 font-mono">{hi.date || 'N/A'}</span>
+              {hi.aircraftMakeModel && <span className="text-radar-400"> {hi.aircraftMakeModel}</span>}
+              <span> - {hi.synopsis || hi.narrative.slice(0, 100)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -542,16 +594,328 @@ function MapPlaceholder() {
 }
 
 // ============================================
+// Dataset Status Bar Component
+// ============================================
+
+function DatasetStatusBar() {
+  const { data: status, isLoading } = useDatasetStatus();
+
+  if (isLoading || !status) {
+    return (
+      <div className="glass-panel p-4">
+        <div className="text-gray-500 text-center">Loading dataset status...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-panel p-4">
+      <h3 className="font-display font-bold text-gray-200 flex items-center gap-2 mb-4">
+        <Database className="w-5 h-5 text-radar-400" />
+        HuggingFace Dataset Sources
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-3 bg-sky-dark/50 border border-sky-border rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-300">Aircraft Metadata</span>
+            <div className={cn('w-2 h-2 rounded-full', status.aircraftMetadata.loaded ? 'bg-green-500' : 'bg-yellow-500 animate-pulse')} />
+          </div>
+          <div className="text-2xl font-display font-bold text-radar-300">
+            {formatCompact(status.aircraftMetadata.count)}
+          </div>
+          <div className="text-xs text-gray-500">aircraft records loaded</div>
+        </div>
+
+        <div className="p-3 bg-sky-dark/50 border border-sky-border rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-300">ASRS Safety Reports</span>
+            <div className={cn('w-2 h-2 rounded-full', status.historicalIncidents.loaded ? 'bg-green-500' : 'bg-yellow-500 animate-pulse')} />
+          </div>
+          <div className="text-2xl font-display font-bold text-yellow-300">
+            {formatCompact(status.historicalIncidents.seedCount)}
+          </div>
+          <div className="text-xs text-gray-500">
+            of {formatCompact(status.historicalIncidents.totalAvailable)} total reports
+          </div>
+        </div>
+
+        <div className="p-3 bg-sky-dark/50 border border-sky-border rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-300">ATC Transcripts</span>
+            <div className={cn('w-2 h-2 rounded-full', status.atcTranscripts.available ? 'bg-green-500' : 'bg-red-500')} />
+          </div>
+          <div className="text-2xl font-display font-bold text-blue-300">
+            {formatCompact(status.atcTranscripts.totalEntries)}
+          </div>
+          <div className="text-xs text-gray-500">transcript entries available</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Historical Incidents Panel Component
+// ============================================
+
+function HistoricalIncidentsPanel() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const pageSize = 10;
+
+  const { data: browseData, isLoading: browseLoading } = useHistoricalIncidents({
+    offset: page * pageSize,
+    limit: pageSize,
+  });
+
+  const { data: searchData, isLoading: searchLoading } = useHistoricalIncidentSearch(
+    activeSearch,
+    { offset: 0, limit: 20, enabled: !!activeSearch }
+  );
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setActiveSearch(searchQuery);
+    setPage(0);
+  };
+
+  const data = activeSearch ? searchData : browseData;
+  const isLoading = activeSearch ? searchLoading : browseLoading;
+  const incidents = data?.incidents || [];
+
+  return (
+    <div className="glass-panel p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-display font-bold text-gray-200 flex items-center gap-2">
+          <FileText className="w-6 h-6 text-yellow-400" />
+          ASRS Aviation Safety Reports
+        </h2>
+        <div className="text-sm text-gray-500">
+          {data?.total ? `${formatNumber(data.total)} total reports` : ''}
+        </div>
+      </div>
+
+      <form onSubmit={handleSearch} className="relative mb-4">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search historical incidents (e.g., runway incursion, engine failure, TCAS RA)..."
+          className="input-field pl-12 pr-24"
+        />
+        <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 btn-primary text-sm py-1.5">
+          Search
+        </button>
+      </form>
+
+      {activeSearch && (
+        <button
+          onClick={() => { setActiveSearch(''); setSearchQuery(''); }}
+          className="mb-4 text-sm text-radar-400 hover:text-radar-300 flex items-center gap-1"
+        >
+          <ChevronLeft className="w-4 h-4" /> Clear search, browse all
+        </button>
+      )}
+
+      {isLoading ? (
+        <div className="text-gray-500 text-center py-8">Loading historical incidents...</div>
+      ) : incidents.length === 0 ? (
+        <div className="text-gray-500 text-center py-8">
+          {activeSearch ? `No results for "${activeSearch}"` : 'No historical incidents loaded'}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {incidents.map((incident: HistoricalIncident) => (
+            <HistoricalIncidentCard key={incident.id} incident={incident} />
+          ))}
+        </div>
+      )}
+
+      {!activeSearch && data && data.hasMore && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-sky-border">
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="text-sm text-radar-400 hover:text-radar-300 disabled:text-gray-600 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-500">Page {page + 1}</span>
+          <button
+            onClick={() => setPage(p => p + 1)}
+            disabled={!data.hasMore}
+            className="text-sm text-radar-400 hover:text-radar-300 disabled:text-gray-600 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoricalIncidentCard({ incident }: { incident: HistoricalIncident }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="p-4 bg-sky-dark/50 border border-sky-border rounded-lg hover:border-radar-500/30 transition-colors">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {incident.primaryProblem && (
+            <span className="px-2 py-0.5 text-xs font-medium rounded bg-yellow-500/20 border border-yellow-500/30 text-yellow-400">
+              {incident.primaryProblem}
+            </span>
+          )}
+          {incident.flightPhase && (
+            <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">
+              {incident.flightPhase}
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 shrink-0 ml-2">
+          {incident.date || 'Date N/A'} | ACN {incident.acnNumber}
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-300 mb-2">
+        {incident.synopsis || incident.narrative.slice(0, 200)}
+      </p>
+
+      <div className="flex items-center gap-4 text-xs text-gray-500 mb-2">
+        {incident.aircraftMakeModel && (
+          <span className="flex items-center gap-1">
+            <Plane className="w-3 h-3" /> {incident.aircraftMakeModel}
+          </span>
+        )}
+        {incident.localeReference && (
+          <span className="flex items-center gap-1">
+            <MapPin className="w-3 h-3" /> {incident.localeReference}
+          </span>
+        )}
+        {incident.aircraftOperator && (
+          <span>{incident.aircraftOperator}</span>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-sky-border text-sm text-gray-400 space-y-2">
+          <p><strong className="text-gray-300">Narrative:</strong> {incident.narrative}</p>
+          {incident.contributingFactors && (
+            <p><strong className="text-gray-300">Contributing Factors:</strong> {incident.contributingFactors}</p>
+          )}
+          {incident.anomaly && (
+            <p><strong className="text-gray-300">Anomaly:</strong> {incident.anomaly}</p>
+          )}
+          {incident.result && (
+            <p><strong className="text-gray-300">Result:</strong> {incident.result}</p>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="mt-2 text-xs text-radar-400 hover:text-radar-300 flex items-center gap-1"
+      >
+        {expanded ? 'Show Less' : 'Read Full Report'}
+        <ChevronRight className={cn('w-3 h-3 transition-transform', expanded && 'rotate-90')} />
+      </button>
+    </div>
+  );
+}
+
+// ============================================
+// ATC Dataset Panel Component
+// ============================================
+
+function ATCDatasetPanel() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+
+  const { data: browseData, isLoading: browseLoading } = useATCDataset({ limit: 20 });
+  const { data: searchData, isLoading: searchLoading } = useATCDatasetSearch(activeSearch);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setActiveSearch(searchQuery);
+  };
+
+  const data = activeSearch ? searchData : browseData;
+  const isLoading = activeSearch ? searchLoading : browseLoading;
+  const entries = data?.entries || [];
+
+  return (
+    <div className="glass-panel p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-display font-bold text-gray-200 flex items-center gap-2">
+          <Radio className="w-6 h-6 text-blue-400" />
+          ATC Transcript Dataset
+        </h2>
+        <div className="text-sm text-gray-500">
+          {data?.total ? `${formatCompact(data.total)} entries` : ''}
+        </div>
+      </div>
+
+      <form onSubmit={handleSearch} className="relative mb-4">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search ATC transcripts (e.g., cleared for takeoff, go around)..."
+          className="input-field pl-12 pr-24"
+        />
+        <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 btn-primary text-sm py-1.5">
+          Search
+        </button>
+      </form>
+
+      {activeSearch && (
+        <button
+          onClick={() => { setActiveSearch(''); setSearchQuery(''); }}
+          className="mb-4 text-sm text-radar-400 hover:text-radar-300 flex items-center gap-1"
+        >
+          <ChevronLeft className="w-4 h-4" /> Clear search
+        </button>
+      )}
+
+      {isLoading ? (
+        <div className="text-gray-500 text-center py-8">Loading ATC transcripts...</div>
+      ) : entries.length === 0 ? (
+        <div className="text-gray-500 text-center py-8">
+          {activeSearch ? `No results for "${activeSearch}"` : 'No ATC transcripts available'}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {entries.map((entry: ATCDatasetEntry) => (
+            <div key={entry.id} className="p-3 bg-sky-dark/50 border border-sky-border rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="px-2 py-0.5 text-xs font-mono rounded bg-blue-500/20 text-blue-400">
+                  ATC
+                </span>
+                <span className="text-xs text-gray-500 font-mono">{entry.id}</span>
+              </div>
+              <p className="text-sm text-gray-300 font-mono">{entry.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // Navigation Tabs
 // ============================================
 
-type TabId = 'overview' | 'flights' | 'anomalies' | 'incidents' | 'atc' | 'query';
+type TabId = 'overview' | 'flights' | 'anomalies' | 'incidents' | 'atc' | 'query' | 'datasets';
 
-function NavigationTabs({ 
-  activeTab, 
-  onTabChange 
-}: { 
-  activeTab: TabId; 
+function NavigationTabs({
+  activeTab,
+  onTabChange
+}: {
+  activeTab: TabId;
   onTabChange: (tab: TabId) => void;
 }) {
   const tabs: { id: TabId; label: string; icon: any }[] = [
@@ -561,6 +925,7 @@ function NavigationTabs({
     { id: 'incidents', label: 'Incidents', icon: FileText },
     { id: 'atc', label: 'ATC Feed', icon: Radio },
     { id: 'query', label: 'AI Query', icon: MessageSquare },
+    { id: 'datasets', label: 'Historical Data', icon: Database },
   ];
   
   return (
@@ -738,7 +1103,7 @@ export default function App() {
               <div className="text-gray-500 text-center py-12">Loading flights...</div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {aircraft.map((ac: Aircraft) => {
+                {aircraft.map((ac: EnrichedAircraft) => {
                   const anomaly = flightAnomalies.find(a => a.flight_icao24 === ac.icao24);
                   return <FlightCard key={ac.icao24} aircraft={ac} anomaly={anomaly} />;
                 })}
@@ -837,6 +1202,15 @@ export default function App() {
               </p>
             </div>
             <QueryPanel />
+          </div>
+        )}
+
+        {/* Historical Data Tab */}
+        {activeTab === 'datasets' && (
+          <div className="space-y-6 animate-fade-in">
+            <DatasetStatusBar />
+            <HistoricalIncidentsPanel />
+            <ATCDatasetPanel />
           </div>
         )}
       </main>

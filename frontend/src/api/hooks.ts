@@ -67,11 +67,94 @@ export interface Incident {
   };
 }
 
+export interface AircraftMetadata {
+  icao24: string;
+  registration: string | null;
+  manufacturerIcao: string | null;
+  manufacturerName: string | null;
+  model: string | null;
+  typecode: string | null;
+  icaoAircraftType: string | null;
+  operator: string | null;
+  operatorCallsign: string | null;
+  owner: string | null;
+  categoryDescription: string | null;
+  built: string | null;
+  engines: string | null;
+}
+
+export interface EnrichedAircraft extends Aircraft {
+  metadata?: AircraftMetadata;
+}
+
+export interface HistoricalIncident {
+  id: string;
+  acnNumber: string;
+  date: string | null;
+  localTimeOfDay: string | null;
+  localeReference: string | null;
+  stateReference: string | null;
+  altitudeMsl: string | null;
+  flightConditions: string | null;
+  light: string | null;
+  aircraftOperator: string | null;
+  aircraftMakeModel: string | null;
+  flightPhase: string | null;
+  anomaly: string | null;
+  result: string | null;
+  contributingFactors: string | null;
+  primaryProblem: string | null;
+  narrative: string;
+  synopsis: string;
+  humanFactors: string | null;
+  source: string;
+}
+
+export interface HistoricalIncidentSearchResult {
+  incidents: HistoricalIncident[];
+  total: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface ATCDatasetEntry {
+  id: string;
+  text: string;
+  source: string;
+}
+
+export interface ATCDatasetSearchResult {
+  entries: ATCDatasetEntry[];
+  total: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface DatasetServiceStatus {
+  aircraftMetadata: {
+    loaded: boolean;
+    count: number;
+    lastUpdated: string | null;
+  };
+  historicalIncidents: {
+    loaded: boolean;
+    seedCount: number;
+    totalAvailable: number;
+    lastUpdated: string | null;
+  };
+  atcTranscripts: {
+    available: boolean;
+    totalEntries: number;
+  };
+}
+
 export interface DashboardStats {
   flights_tracked: number;
   active_anomalies: number;
   incidents_today: number;
   atc_communications_processed: number;
+  dataset_aircraft_loaded: number;
+  dataset_incidents_loaded: number;
   last_updated: string;
 }
 
@@ -101,7 +184,7 @@ export function useDashboardStats() {
 export function useFlights(options?: { limit?: number }) {
   return useQuery({
     queryKey: ['flights', options],
-    queryFn: () => apiFetch<{ aircraft: Aircraft[]; anomalies: FlightAnomaly[] }>(
+    queryFn: () => apiFetch<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }>(
       `/flights?limit=${options?.limit || 100}`
     ),
     refetchInterval: 15000, // Refresh every 15 seconds
@@ -111,7 +194,7 @@ export function useFlights(options?: { limit?: number }) {
 export function useFlightsByArea(bbox: { minLat: number; maxLat: number; minLon: number; maxLon: number }) {
   return useQuery({
     queryKey: ['flights', 'area', bbox],
-    queryFn: () => apiFetch<{ aircraft: Aircraft[]; anomalies: FlightAnomaly[] }>(
+    queryFn: () => apiFetch<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }>(
       `/flights/area?min_lat=${bbox.minLat}&max_lat=${bbox.maxLat}&min_lon=${bbox.minLon}&max_lon=${bbox.maxLon}`
     ),
     refetchInterval: 15000,
@@ -122,7 +205,7 @@ export function useFlightsByArea(bbox: { minLat: number; maxLat: number; minLon:
 export function useFlightsByRadius(center: { lat: number; lon: number; radiusNm?: number }) {
   return useQuery({
     queryKey: ['flights', 'radius', center],
-    queryFn: () => apiFetch<{ aircraft: Aircraft[]; anomalies: FlightAnomaly[] }>(
+    queryFn: () => apiFetch<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }>(
       `/flights/radius?lat=${center.lat}&lon=${center.lon}&radius_nm=${center.radiusNm || 50}`
     ),
     refetchInterval: 15000,
@@ -133,7 +216,7 @@ export function useFlightsByRadius(center: { lat: number; lon: number; radiusNm?
 export function useFlight(icao24: string) {
   return useQuery({
     queryKey: ['flights', icao24],
-    queryFn: () => apiFetch<{ aircraft: Aircraft; anomalies: FlightAnomaly[] }>(`/flights/${icao24}`),
+    queryFn: () => apiFetch<{ aircraft: EnrichedAircraft; anomalies: FlightAnomaly[] }>(`/flights/${icao24}`),
     enabled: !!icao24,
   });
 }
@@ -277,10 +360,125 @@ export function useAnalyzeImage() {
 
 export function useAnalyzeImageUrl() {
   return useMutation({
-    mutationFn: ({ url, type, questions }: { url: string; type: string; questions?: string[] }) => 
+    mutationFn: ({ url, type, questions }: { url: string; type: string; questions?: string[] }) =>
       apiFetch<any>('/images/analyze-url', {
         method: 'POST',
         body: JSON.stringify({ url, type, questions }),
       }),
+  });
+}
+
+// ============================================
+// HF Dataset Hooks
+// ============================================
+
+export function useDatasetStatus() {
+  return useQuery({
+    queryKey: ['datasets', 'status'],
+    queryFn: () => apiFetch<DatasetServiceStatus>('/datasets/status'),
+    refetchInterval: 60000,
+  });
+}
+
+export function useAircraftMetadata(icao24: string) {
+  return useQuery({
+    queryKey: ['datasets', 'aircraft', icao24],
+    queryFn: () => apiFetch<AircraftMetadata>(`/datasets/aircraft/${icao24}`),
+    enabled: !!icao24,
+    staleTime: 3600000,
+  });
+}
+
+export function useAircraftSearch(params: {
+  registration?: string;
+  typecode?: string;
+  manufacturer?: string;
+  limit?: number;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params.registration) searchParams.append('registration', params.registration);
+  if (params.typecode) searchParams.append('typecode', params.typecode);
+  if (params.manufacturer) searchParams.append('manufacturer', params.manufacturer);
+  if (params.limit) searchParams.append('limit', params.limit.toString());
+
+  return useQuery({
+    queryKey: ['datasets', 'aircraft', 'search', params],
+    queryFn: () => apiFetch<AircraftMetadata[]>(`/datasets/aircraft?${searchParams}`),
+    enabled: !!(params.registration || params.typecode || params.manufacturer),
+    staleTime: 300000,
+  });
+}
+
+export function useHistoricalIncidentSearch(query: string, options?: {
+  offset?: number;
+  limit?: number;
+  enabled?: boolean;
+}) {
+  const params = new URLSearchParams();
+  if (query) params.append('q', query);
+  if (options?.offset) params.append('offset', options.offset.toString());
+  if (options?.limit) params.append('limit', options.limit.toString());
+
+  return useQuery({
+    queryKey: ['datasets', 'incidents', 'search', query, options],
+    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(
+      `/datasets/incidents/search?${params}`
+    ),
+    enabled: options?.enabled !== false && !!query,
+    staleTime: 60000,
+  });
+}
+
+export function useHistoricalIncidents(options?: {
+  offset?: number;
+  limit?: number;
+  primaryProblem?: string;
+  flightPhase?: string;
+}) {
+  const params = new URLSearchParams();
+  if (options?.offset) params.append('offset', options.offset.toString());
+  if (options?.limit) params.append('limit', (options.limit || 20).toString());
+  if (options?.primaryProblem) params.append('primary_problem', options.primaryProblem);
+  if (options?.flightPhase) params.append('flight_phase', options.flightPhase);
+
+  return useQuery({
+    queryKey: ['datasets', 'incidents', options],
+    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(
+      `/datasets/incidents?${params}`
+    ),
+    staleTime: 120000,
+  });
+}
+
+export function useHistoricalIncident(id: string) {
+  return useQuery({
+    queryKey: ['datasets', 'incidents', id],
+    queryFn: () => apiFetch<HistoricalIncident>(`/datasets/incidents/${id}`),
+    enabled: !!id,
+    staleTime: 300000,
+  });
+}
+
+export function useATCDataset(options?: { offset?: number; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.offset) params.append('offset', options.offset.toString());
+  if (options?.limit) params.append('limit', (options.limit || 20).toString());
+
+  return useQuery({
+    queryKey: ['datasets', 'atc', options],
+    queryFn: () => apiFetch<ATCDatasetSearchResult>(`/datasets/atc?${params}`),
+    staleTime: 120000,
+  });
+}
+
+export function useATCDatasetSearch(query: string) {
+  const params = new URLSearchParams();
+  if (query) params.append('q', query);
+
+  return useQuery({
+    queryKey: ['datasets', 'atc', 'search', query],
+    queryFn: () => apiFetch<ATCDatasetSearchResult>(`/datasets/atc/search?${params}`),
+    enabled: !!query,
+    staleTime: 60000,
   });
 }

@@ -28,6 +28,12 @@ const envSchema = z.object({
   // Rate Limits
   OPENSKY_RATE_LIMIT_MS: z.string().transform(Number).default('10000'),
   HF_RATE_LIMIT_MS: z.string().transform(Number).default('1000'),
+  HF_DATASETS_RATE_LIMIT_MS: z.string().transform(Number).default('500'),
+
+  // HF Datasets
+  ENABLE_HF_DATASETS: z.string().transform(v => v === 'true').default('true'),
+  AIRCRAFT_DB_REFRESH_HOURS: z.string().transform(Number).default('24'),
+  HF_INCIDENT_SEED_COUNT: z.string().transform(Number).default('200'),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -49,6 +55,7 @@ export const env = loadEnv();
 
 // Demo mode detection
 export const isDemoMode = !env.HUGGINGFACE_API_KEY;
+export const isDatasetsEnabled = env.ENABLE_HF_DATASETS;
 
 if (isDemoMode) {
   console.log('⚠️  Running in DEMO MODE - AI features will use mock responses');
