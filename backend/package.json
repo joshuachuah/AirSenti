@@ -1,0 +1,26 @@
+{
+  "name": "airsentinel-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "db:migrate": "bun run src/db/migrate.ts"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "@huggingface/inference": "^2.7.0",
+    "pg": "^8.12.0",
+    "redis": "^4.6.14",
+    "zod": "^3.23.8",
+    "eventsource": "^2.0.2",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/pg": "^8.11.6",
+    "@types/ws": "^8.5.10",
+    "@types/eventsource": "^1.1.15",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  :root {
+    --color-radar: #00ffc8;
+    --color-radar-dim: rgba(0, 255, 200, 0.3);
+    --color-danger: #ef4444;
+    --color-warning: #eab308;
+    --color-success: #22c55e;
+  }
+  
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 255, 200, 0.3) transparent;
+  }
+  
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    background: rgba(0, 255, 200, 0.3);
+    border-radius: 3px;
+  }
+  
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 255, 200, 0.5);
+  }
+  
+  body {
+    @apply bg-sky-darker text-gray-100 font-sans antialiased;
+    background-image: 
+      radial-gradient(ellipse at top, rgba(0, 255, 200, 0.03) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+  
+  /* Selection styles */
+  ::selection {
+    background: rgba(0, 255, 200, 0.3);
+    color: white;
+  }
+}
+
+/* Component styles */
+@layer components {
+  .glass-panel {
+    @apply bg-sky-panel/80 backdrop-blur-xl border border-sky-border rounded-xl;
+    box-shadow: 
+      0 0 0 1px rgba(0, 255, 200, 0.05),
+      0 4px 20px -4px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+  
+  .radar-glow {
+    box-shadow: 
+      0 0 20px rgba(0, 255, 200, 0.3),
+      0 0 40px rgba(0, 255, 200, 0.1);
+  }
+  
+  .danger-glow {
+    box-shadow: 
+      0 0 20px rgba(239, 68, 68, 0.4),
+      0 0 40px rgba(239, 68, 68, 0.2);
+  }
+  
+  .warning-glow {
+    box-shadow: 
+      0 0 20px rgba(234, 179, 8, 0.4),
+      0 0 40px rgba(234, 179, 8, 0.2);
+  }
+  
+  .stat-card {
+    @apply glass-panel p-6 relative overflow-hidden;
+  }
+  
+  .stat-card::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-px;
+    background: linear-gradient(90deg, transparent, var(--color-radar), transparent);
+    opacity: 0.5;
+  }
+  
+  .data-label {
+    @apply text-xs font-mono uppercase tracking-wider text-gray-500;
+  }
+  
+  .data-value {
+    @apply text-2xl font-display font-bold text-radar-200;
+  }
+  
+  .btn-primary {
+    @apply px-4 py-2 bg-radar-600 hover:bg-radar-500 text-white font-medium rounded-lg
+           transition-all duration-200 hover:shadow-lg hover:shadow-radar-500/25
+           focus:outline-none focus:ring-2 focus:ring-radar-400 focus:ring-offset-2 focus:ring-offset-sky-dark;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-sky-border hover:bg-gray-700 text-gray-200 font-medium rounded-lg
+           border border-gray-600 hover:border-gray-500 transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 focus:ring-offset-sky-dark;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 bg-sky-dark border border-sky-border rounded-lg
+           text-gray-100 placeholder-gray-500
+           focus:outline-none focus:border-radar-400 focus:ring-1 focus:ring-radar-400/50
+           transition-all duration-200;
+  }
+  
+  .severity-critical {
+    @apply bg-red-500/20 text-red-400 border-red-500/50;
+  }
+  
+  .severity-high {
+    @apply bg-orange-500/20 text-orange-400 border-orange-500/50;
+  }
+  
+  .severity-medium {
+    @apply bg-yellow-500/20 text-yellow-400 border-yellow-500/50;
+  }
+  
+  .severity-low {
+    @apply bg-blue-500/20 text-blue-400 border-blue-500/50;
+  }
+}
+
+/* Utility classes */
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-radar-300 to-radar-500;
+  }
+  
+  .scanline {
+    position: relative;
+  }
+  
+  .scanline::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+  }
+  
+  .grid-overlay {
+    background-image: 
+      linear-gradient(rgba(0, 255, 200, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 200, 0.03) 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+}
+
+/* Animations */
+@keyframes radar-ping {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes flight-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.radar-ping {
+  animation: radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.flight-pulse {
+  animation: flight-pulse 1.5s ease-in-out infinite;
+}
+
+/* Map overrides */
+.maplibregl-map {
+  font-family: inherit !important;
+}
+
+.maplibregl-popup-content {
+  @apply glass-panel !important;
+  padding: 12px !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: rgba(17, 24, 39, 0.8) !important;
+}
+
+.maplibregl-ctrl-group {
+  @apply glass-panel !important;
+}
+
+.maplibregl-ctrl-group button {
+  @apply text-gray-300 hover:text-white !important;
+}
