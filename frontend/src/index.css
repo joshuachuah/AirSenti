@@ -2,219 +2,404 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom base styles */
+/* ============================================
+   AirSentinel AI — Tactical Night Ops Design
+   ============================================ */
+
 @layer base {
   :root {
-    --color-radar: #00ffc8;
-    --color-radar-dim: rgba(0, 255, 200, 0.3);
-    --color-danger: #ef4444;
-    --color-warning: #eab308;
-    --color-success: #22c55e;
+    --radar: #00ffc8;
+    --radar-dim: rgba(0, 255, 200, 0.15);
+    --radar-ghost: rgba(0, 255, 200, 0.04);
+    --void: #030712;
+    --surface: #060c18;
+    --panel: rgba(6, 12, 24, 0.85);
+    --border: rgba(0, 255, 200, 0.08);
+    --danger: #ef4444;
+    --amber: #f59e0b;
   }
-  
+
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 255, 200, 0.3) transparent;
+    scrollbar-color: rgba(0, 255, 200, 0.2) transparent;
   }
-  
+
   *::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
-  
+
   *::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   *::-webkit-scrollbar-thumb {
-    background: rgba(0, 255, 200, 0.3);
-    border-radius: 3px;
+    background: rgba(0, 255, 200, 0.2);
+    border-radius: 10px;
   }
-  
+
   *::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 255, 200, 0.5);
+    background: rgba(0, 255, 200, 0.35);
   }
-  
+
   body {
-    @apply bg-sky-darker text-gray-100 font-sans antialiased;
-    background-image: 
-      radial-gradient(ellipse at top, rgba(0, 255, 200, 0.03) 0%, transparent 50%),
-      radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+    @apply bg-void-950 text-gray-100 font-sans antialiased;
     min-height: 100vh;
+    overflow-x: hidden;
   }
-  
-  /* Selection styles */
+
   ::selection {
-    background: rgba(0, 255, 200, 0.3);
-    color: white;
+    background: rgba(0, 255, 200, 0.25);
+    color: #fff;
   }
 }
 
-/* Component styles */
+/* ============================================
+   Atmospheric Background
+   ============================================ */
+
+#root {
+  position: relative;
+  min-height: 100vh;
+}
+
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(0, 255, 200, 0.025) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 90%, rgba(59, 130, 246, 0.02) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0, 0, 0, 0) 40%, rgba(2, 4, 9, 1) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Film grain overlay */
+#root::after {
+  content: '';
+  position: fixed;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.015;
+  pointer-events: none;
+  z-index: 1;
+  animation: grain 0.5s steps(1) infinite;
+}
+
+/* ============================================
+   Component Styles
+   ============================================ */
+
 @layer components {
-  .glass-panel {
-    @apply bg-sky-panel/80 backdrop-blur-xl border border-sky-border rounded-xl;
-    box-shadow: 
-      0 0 0 1px rgba(0, 255, 200, 0.05),
-      0 4px 20px -4px rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  }
-  
-  .radar-glow {
-    box-shadow: 
-      0 0 20px rgba(0, 255, 200, 0.3),
-      0 0 40px rgba(0, 255, 200, 0.1);
-  }
-  
-  .danger-glow {
-    box-shadow: 
-      0 0 20px rgba(239, 68, 68, 0.4),
-      0 0 40px rgba(239, 68, 68, 0.2);
-  }
-  
-  .warning-glow {
-    box-shadow: 
-      0 0 20px rgba(234, 179, 8, 0.4),
-      0 0 40px rgba(234, 179, 8, 0.2);
-  }
-  
-  .stat-card {
-    @apply glass-panel p-6 relative overflow-hidden;
-  }
-  
-  .stat-card::before {
-    content: '';
-    @apply absolute top-0 left-0 right-0 h-px;
-    background: linear-gradient(90deg, transparent, var(--color-radar), transparent);
-    opacity: 0.5;
-  }
-  
-  .data-label {
-    @apply text-xs font-mono uppercase tracking-wider text-gray-500;
-  }
-  
-  .data-value {
-    @apply text-2xl font-display font-bold text-radar-200;
-  }
-  
-  .btn-primary {
-    @apply px-4 py-2 bg-radar-600 hover:bg-radar-500 text-white font-medium rounded-lg
-           transition-all duration-200 hover:shadow-lg hover:shadow-radar-500/25
-           focus:outline-none focus:ring-2 focus:ring-radar-400 focus:ring-offset-2 focus:ring-offset-sky-dark;
-  }
-  
-  .btn-secondary {
-    @apply px-4 py-2 bg-sky-border hover:bg-gray-700 text-gray-200 font-medium rounded-lg
-           border border-gray-600 hover:border-gray-500 transition-all duration-200
-           focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 focus:ring-offset-sky-dark;
-  }
-  
-  .input-field {
-    @apply w-full px-4 py-3 bg-sky-dark border border-sky-border rounded-lg
-           text-gray-100 placeholder-gray-500
-           focus:outline-none focus:border-radar-400 focus:ring-1 focus:ring-radar-400/50
-           transition-all duration-200;
-  }
-  
-  .severity-critical {
-    @apply bg-red-500/20 text-red-400 border-red-500/50;
-  }
-  
-  .severity-high {
-    @apply bg-orange-500/20 text-orange-400 border-orange-500/50;
-  }
-  
-  .severity-medium {
-    @apply bg-yellow-500/20 text-yellow-400 border-yellow-500/50;
-  }
-  
-  .severity-low {
-    @apply bg-blue-500/20 text-blue-400 border-blue-500/50;
-  }
-}
 
-/* Utility classes */
-@layer utilities {
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-radar-300 to-radar-500;
+  /* ---------- HUD Panel ---------- */
+  .hud-panel {
+    @apply relative overflow-hidden rounded-xl;
+    background: var(--panel);
+    backdrop-filter: blur(20px) saturate(1.2);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 0 0 1px rgba(0, 255, 200, 0.03),
+      0 4px 30px -4px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.02);
   }
-  
-  .scanline {
-    position: relative;
-  }
-  
-  .scanline::after {
+
+  .hud-panel::before {
     content: '';
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--radar-dim) 30%, var(--radar-dim) 70%, transparent 100%);
+  }
+
+  /* ---------- Stat Card ---------- */
+  .stat-card {
+    @apply hud-panel p-5 transition-all duration-300 cursor-default;
+  }
+
+  .stat-card:hover {
+    border-color: rgba(0, 255, 200, 0.15);
+    box-shadow:
+      0 0 0 1px rgba(0, 255, 200, 0.06),
+      0 8px 40px -8px rgba(0, 0, 0, 0.7),
+      0 0 30px -10px rgba(0, 255, 200, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  /* ---------- Data Typography ---------- */
+  .data-label {
+    @apply text-[11px] font-display font-medium uppercase tracking-[0.15em] text-gray-500;
+  }
+
+  .data-value {
+    @apply text-2xl font-display font-bold text-radar-300;
+    text-shadow: 0 0 20px rgba(0, 255, 200, 0.15);
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn-primary {
+    @apply relative px-5 py-2.5 font-display font-semibold text-sm tracking-wide uppercase
+           rounded-lg overflow-hidden transition-all duration-300
+           text-void-900 bg-radar-400
+           hover:bg-radar-300 hover:shadow-glow
+           focus:outline-none focus:ring-2 focus:ring-radar-400/50 focus:ring-offset-2 focus:ring-offset-void-900;
+  }
+
+  .btn-secondary {
+    @apply px-5 py-2.5 font-display font-medium text-sm tracking-wide uppercase
+           rounded-lg border border-hud-border-active text-radar-400
+           hover:bg-radar-400/10 hover:border-radar-400/30
+           transition-all duration-300
+           focus:outline-none focus:ring-2 focus:ring-radar-400/30 focus:ring-offset-2 focus:ring-offset-void-900;
+  }
+
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg text-gray-400
+           hover:text-radar-400 hover:bg-radar-400/5
+           transition-all duration-200;
+  }
+
+  /* ---------- Input ---------- */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-lg font-sans text-sm
+           bg-void-850 border border-hud-border text-gray-100
+           placeholder:text-gray-600
+           focus:outline-none focus:border-radar-400/40 focus:ring-1 focus:ring-radar-400/20
+           focus:bg-void-800
+           transition-all duration-200;
+  }
+
+  /* ---------- Badge ---------- */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md
+           text-[11px] font-display font-semibold uppercase tracking-wider
+           border;
+  }
+
+  .badge-critical {
+    @apply bg-red-500/15 text-red-400 border-red-500/30;
+  }
+
+  .badge-high {
+    @apply bg-orange-500/15 text-orange-400 border-orange-500/30;
+  }
+
+  .badge-medium {
+    @apply bg-yellow-500/15 text-yellow-400 border-yellow-500/30;
+  }
+
+  .badge-low {
+    @apply bg-blue-500/15 text-blue-400 border-blue-500/30;
+  }
+
+  .badge-info {
+    @apply bg-radar-400/10 text-radar-400 border-radar-400/20;
+  }
+
+  /* ---------- Severity backgrounds ---------- */
+  .severity-critical {
+    @apply bg-red-500/10 border-red-500/30;
+  }
+
+  .severity-high {
+    @apply bg-orange-500/10 border-orange-500/30;
+  }
+
+  .severity-medium {
+    @apply bg-yellow-500/10 border-yellow-500/30;
+  }
+
+  .severity-low {
+    @apply bg-blue-500/10 border-blue-500/30;
+  }
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #00ffc8, #00b38b, #4dffd2);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px rgba(0, 255, 200, 0.3), 0 0 40px rgba(0, 255, 200, 0.1);
+  }
+
+  .text-glow-danger {
+    text-shadow: 0 0 20px rgba(239, 68, 68, 0.3), 0 0 40px rgba(239, 68, 68, 0.1);
+  }
+
+  .border-glow {
+    box-shadow: 0 0 15px rgba(0, 255, 200, 0.1), inset 0 0 15px rgba(0, 255, 200, 0.03);
+  }
+
+  /* Scanline effect */
+  .scanline {
+    position: relative;
+  }
+
+  .scanline::after {
+    content: '';
+    position: absolute;
+    inset: 0;
     background: repeating-linear-gradient(
       0deg,
       transparent,
       transparent 2px,
-      rgba(0, 0, 0, 0.03) 2px,
-      rgba(0, 0, 0, 0.03) 4px
+      rgba(0, 0, 0, 0.02) 2px,
+      rgba(0, 0, 0, 0.02) 4px
     );
     pointer-events: none;
   }
-  
-  .grid-overlay {
-    background-image: 
-      linear-gradient(rgba(0, 255, 200, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 255, 200, 0.03) 1px, transparent 1px);
-    background-size: 50px 50px;
+
+  /* Hex grid background */
+  .hex-bg {
+    background-image:
+      linear-gradient(30deg, rgba(0, 255, 200, 0.02) 12%, transparent 12.5%, transparent 87%, rgba(0, 255, 200, 0.02) 87.5%),
+      linear-gradient(150deg, rgba(0, 255, 200, 0.02) 12%, transparent 12.5%, transparent 87%, rgba(0, 255, 200, 0.02) 87.5%),
+      linear-gradient(30deg, rgba(0, 255, 200, 0.02) 12%, transparent 12.5%, transparent 87%, rgba(0, 255, 200, 0.02) 87.5%),
+      linear-gradient(150deg, rgba(0, 255, 200, 0.02) 12%, transparent 12.5%, transparent 87%, rgba(0, 255, 200, 0.02) 87.5%),
+      linear-gradient(60deg, rgba(0, 255, 200, 0.015) 25%, transparent 25.5%, transparent 75%, rgba(0, 255, 200, 0.015) 75%),
+      linear-gradient(60deg, rgba(0, 255, 200, 0.015) 25%, transparent 25.5%, transparent 75%, rgba(0, 255, 200, 0.015) 75%);
+    background-size: 40px 70px;
+    background-position: 0 0, 0 0, 20px 35px, 20px 35px, 0 0, 20px 35px;
   }
+
+  /* Dot grid background */
+  .dot-grid {
+    background-image: radial-gradient(circle, rgba(0, 255, 200, 0.06) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Staggered animation delays */
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+  .stagger-6 { animation-delay: 0.3s; }
+  .stagger-7 { animation-delay: 0.35s; }
+  .stagger-8 { animation-delay: 0.4s; }
 }
 
-/* Animations */
-@keyframes radar-ping {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
+/* ============================================
+   Sidebar Styles
+   ============================================ */
+
+.sidebar {
+  width: 72px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes flight-pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.2);
-  }
+.sidebar.expanded {
+  width: 240px;
 }
 
-.radar-ping {
-  animation: radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+.sidebar-item {
+  @apply relative flex items-center gap-3 px-3 py-2.5 mx-2 rounded-lg
+         text-gray-500 cursor-pointer
+         transition-all duration-200;
 }
 
-.flight-pulse {
-  animation: flight-pulse 1.5s ease-in-out infinite;
+.sidebar-item:hover {
+  @apply text-gray-300 bg-white/[0.03];
 }
 
-/* Map overrides */
+.sidebar-item.active {
+  @apply text-radar-400;
+  background: rgba(0, 255, 200, 0.06);
+  box-shadow: inset 3px 0 0 var(--radar);
+}
+
+.sidebar-item.active .sidebar-icon {
+  filter: drop-shadow(0 0 6px rgba(0, 255, 200, 0.4));
+}
+
+/* ============================================
+   MapLibre Overrides
+   ============================================ */
+
 .maplibregl-map {
   font-family: inherit !important;
 }
 
 .maplibregl-popup-content {
-  @apply glass-panel !important;
+  background: var(--panel) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
   padding: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
 
 .maplibregl-popup-tip {
-  border-top-color: rgba(17, 24, 39, 0.8) !important;
+  border-top-color: var(--panel) !important;
 }
 
 .maplibregl-ctrl-group {
-  @apply glass-panel !important;
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
 }
 
 .maplibregl-ctrl-group button {
-  @apply text-gray-300 hover:text-white !important;
+  color: #94a3b8 !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  color: #fff !important;
+  background: rgba(0, 255, 200, 0.05) !important;
+}
+
+/* ============================================
+   Custom Keyframe Animations (non-Tailwind)
+   ============================================ */
+
+@keyframes radar-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.radar-ping {
+  animation: radar-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes status-blink {
+  0%, 70%, 100% { opacity: 1; }
+  80% { opacity: 0.3; }
+}
+
+.status-blink {
+  animation: status-blink 3s ease-in-out infinite;
+}
+
+/* Loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 255, 200, 0.03) 25%,
+    rgba(0, 255, 200, 0.06) 50%,
+    rgba(0, 255, 200, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
 }
