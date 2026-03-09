@@ -87,6 +87,7 @@ const responseCache = new Map<string, { data: any; timestamp: number }>();
 // Backoff tracking for 429 responses
 let backoffUntil = 0;
 const BACKOFF_SECONDS = 60; // Fixed 60s cooldown on 429
+let consecutiveFailures = 0;
 
 function getCached<T>(key: string): { data: T; fresh: boolean } | null {
   const entry = responseCache.get(key);
@@ -459,3 +460,4 @@ export class OpenSkyClient {
 }
 
 export const openSkyClient = new OpenSkyClient();
+

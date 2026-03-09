@@ -549,7 +549,7 @@ export async function processNaturalLanguageQuery(
       })
     );
     
-    const topIntent = classificationResult.labels[0];
+    const topIntent = classificationResult[0]?.labels[0] || 'general_question';
     
     // Extract entities using simple pattern matching
     const entities: Record<string, string> = {};
@@ -768,3 +768,4 @@ function generateMockQueryParsing(query: string): {
 
 // Export for testing
 export const _models = MODELS;
+
