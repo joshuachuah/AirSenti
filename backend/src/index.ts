@@ -62,10 +62,14 @@ flights.get('/', async (c) => {
   try {
     const limit = parseInt(c.req.query('limit') || '100');
     const aircraft = await openSkyClient.getAllStates();
+    const { anomalies: allAnomalies } = await refreshGlobalAnomalies(aircraft);
     
     // Run anomaly detection on all aircraft
     const limited = aircraft.slice(0, limit);
-    const anomalies = detectAnomaliesBatch(limited);
+    const limitedIcao24 = new Set(limited.map((ac) => ac.icao24));
+    const anomalies = allAnomalies.filter((anomaly) =>
+      limitedIcao24.has(anomaly.flight_icao24)
+    );
     const enriched = hfDatasetsClient.enrichAircraftBatch(limited);
 
     const response: APIResponse<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }> = {
@@ -232,8 +236,57 @@ const anomaliesRouter = new Hono();
 // In-memory anomaly store (would be database in production)
 const anomalyStore: FlightAnomaly[] = [];
 
+function getAnomalySignature(anomaly: FlightAnomaly): string {
+  const lat = anomaly.location.latitude.toFixed(3);
+  const lon = anomaly.location.longitude.toFixed(3);
+  return `${anomaly.flight_icao24}:${anomaly.type}:${lat}:${lon}`;
+}
+
+function syncAnomalyStore(anomalies: FlightAnomaly[]): FlightAnomaly[] {
+  const existingBySignature = new Map(
+    anomalyStore.map((anomaly) => [getAnomalySignature(anomaly), anomaly])
+  );
+
+  const refreshed = anomalies.map((anomaly) => {
+    const existing = existingBySignature.get(getAnomalySignature(anomaly));
+    return existing
+      ? {
+          ...anomaly,
+          id: existing.id,
+          ai_analysis: existing.ai_analysis ?? anomaly.ai_analysis,
+        }
+      : anomaly;
+  });
+
+  anomalyStore.splice(0, anomalyStore.length, ...refreshed);
+  return anomalyStore;
+}
+
+async function refreshGlobalAnomalies(aircraft?: Aircraft[]): Promise<{
+  aircraft: Aircraft[];
+  anomalies: FlightAnomaly[];
+}> {
+  try {
+    const liveAircraft = aircraft ?? await openSkyClient.getAllStates();
+    const anomalies = syncAnomalyStore(detectAnomaliesBatch(liveAircraft));
+
+    return {
+      aircraft: liveAircraft,
+      anomalies: [...anomalies],
+    };
+  } catch (error) {
+    console.error('Error refreshing anomaly store:', error);
+    return {
+      aircraft: [],
+      anomalies: [...anomalyStore],
+    };
+  }
+}
+
 // Get recent anomalies
-anomaliesRouter.get('/', (c) => {
+anomaliesRouter.get('/', async (c) => {
+  await refreshGlobalAnomalies();
+
   const severity = c.req.query('severity');
   const type = c.req.query('type');
   const limit = parseInt(c.req.query('limit') || '50');
@@ -262,10 +315,14 @@ anomaliesRouter.get('/', (c) => {
 });
 
 // Get anomaly by ID
-anomaliesRouter.get('/:id', (c) => {
+anomaliesRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const anomaly = anomalyStore.find(a => a.id === id);
-  
+  let anomaly = anomalyStore.find(a => a.id === id);
+
+  if (!anomaly) {
+    await refreshGlobalAnomalies();
+    anomaly = anomalyStore.find(a => a.id === id);
+  }
   if (!anomaly) {
     return c.json({
       success: false,
@@ -279,8 +336,12 @@ anomaliesRouter.get('/:id', (c) => {
 // Analyze anomaly with AI
 anomaliesRouter.post('/:id/analyze', async (c) => {
   const id = c.req.param('id');
-  const anomaly = anomalyStore.find(a => a.id === id);
-  
+  let anomaly = anomalyStore.find(a => a.id === id);
+
+  if (!anomaly) {
+    await refreshGlobalAnomalies();
+    anomaly = anomalyStore.find(a => a.id === id);
+  }
   if (!anomaly) {
     return c.json({
       success: false,
@@ -603,10 +664,12 @@ app.post('/api/query', async (c) => {
         responseText = `Found ${results.length} recent incidents.`;
         break;
         
-      case 'anomaly_report':
-        results = anomalyStore.slice(0, 10);
-        responseText = `${anomalyStore.length} anomalies detected recently.`;
+      case 'anomaly_report': {
+        const { anomalies: liveAnomalies } = await refreshGlobalAnomalies();
+        results = liveAnomalies.slice(0, 10);
+        responseText = `${liveAnomalies.length} anomalies detected recently.`;
         break;
+      }
         
       case 'airport_activity':
         if (parsed.entities.airport) {
@@ -653,9 +716,10 @@ app.get('/api/dashboard/stats', async (c) => {
   try {
     // Get current counts
     const datasetStatus = hfDatasetsClient.getStatus();
+    const { aircraft, anomalies } = await refreshGlobalAnomalies();
     const stats: DashboardStats = {
-      flights_tracked: 0,
-      active_anomalies: anomalyStore.filter(
+      flights_tracked: aircraft.length,
+      active_anomalies: anomalies.filter(
         a => new Date(a.detected_at).getTime() > Date.now() - 3600000
       ).length,
       incidents_today: incidentStore.filter(
@@ -666,12 +730,8 @@ app.get('/api/dashboard/stats', async (c) => {
       dataset_incidents_loaded: datasetStatus.historicalIncidents.seedCount,
       last_updated: new Date().toISOString(),
     };
-    
-    // Try to get flight count from OpenSky
-    try {
-      const aircraft = await openSkyClient.getAllStates();
-      stats.flights_tracked = aircraft.length;
-    } catch {
+
+    if (stats.flights_tracked === 0) {
       stats.flights_tracked = 12847;
     }
     
@@ -907,3 +967,4 @@ export default {
   port,
   fetch: app.fetch,
 };
+
