@@ -3,6 +3,39 @@
 // ============================================
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type {
+  AircraftMetadata,
+  ATCDatasetSearchResult,
+  ATCTranscript,
+  DashboardStats,
+  DatasetServiceStatus,
+  EnrichedAircraft,
+  FlightAnomaly,
+  FlightTrack,
+  HistoricalIncident,
+  HistoricalIncidentSearchResult,
+  ImageAnalysisResult,
+  Incident,
+  IncidentBriefing,
+} from '../../../shared/types';
+
+export type {
+  Aircraft,
+  AircraftMetadata,
+  ATCDatasetEntry,
+  ATCDatasetSearchResult,
+  ATCTranscript,
+  DashboardStats,
+  DatasetServiceStatus,
+  EnrichedAircraft,
+  FlightAnomaly,
+  FlightTrack,
+  HistoricalIncident,
+  HistoricalIncidentSearchResult,
+  ImageAnalysisResult,
+  Incident,
+  IncidentBriefing,
+} from '../../../shared/types';
 
 const API_BASE = '/api';
 
@@ -25,145 +58,24 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
   return data.data || data;
 }
 
-// Types (simplified from shared types)
-export interface Aircraft {
-  icao24: string;
-  callsign: string | null;
-  origin_country: string;
-  longitude: number | null;
-  latitude: number | null;
-  baro_altitude: number | null;
-  velocity: number | null;
-  true_track: number | null;
-  vertical_rate: number | null;
-  on_ground: boolean;
-  squawk: string | null;
+export interface LiveATCResponse {
+  frequency: string;
+  airport: string;
+  stream_url: string | null;
+  recent_transmissions: Array<{
+    timestamp: string;
+    speaker: 'pilot' | 'atc' | 'unknown';
+    text: string;
+  }>;
 }
 
-export interface FlightAnomaly {
-  id: string;
-  flight_icao24: string;
-  callsign: string | null;
-  type: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  detected_at: string;
-  location: { latitude: number; longitude: number };
-  details: { description: string };
-  ai_analysis?: string;
-}
-
-export interface Incident {
-  id: string;
-  source: string;
-  title: string;
-  description: string;
-  occurred_at: string;
-  severity: string;
-  status: string;
-  location?: {
-    airport_icao?: string;
-    latitude?: number;
-    longitude?: number;
-  };
-}
-
-export interface AircraftMetadata {
-  icao24: string;
-  registration: string | null;
-  manufacturerIcao: string | null;
-  manufacturerName: string | null;
-  model: string | null;
-  typecode: string | null;
-  icaoAircraftType: string | null;
-  operator: string | null;
-  operatorCallsign: string | null;
-  owner: string | null;
-  categoryDescription: string | null;
-  built: string | null;
-  engines: string | null;
-}
-
-export interface EnrichedAircraft extends Aircraft {
-  metadata?: AircraftMetadata;
-}
-
-export interface HistoricalIncident {
-  id: string;
-  acnNumber: string;
-  date: string | null;
-  localTimeOfDay: string | null;
-  localeReference: string | null;
-  stateReference: string | null;
-  altitudeMsl: string | null;
-  flightConditions: string | null;
-  light: string | null;
-  aircraftOperator: string | null;
-  aircraftMakeModel: string | null;
-  flightPhase: string | null;
-  anomaly: string | null;
-  result: string | null;
-  contributingFactors: string | null;
-  primaryProblem: string | null;
-  narrative: string;
-  synopsis: string;
-  humanFactors: string | null;
-  source: string;
-}
-
-export interface HistoricalIncidentSearchResult {
-  incidents: HistoricalIncident[];
-  total: number;
-  offset: number;
-  hasMore: boolean;
-}
-
-export interface ATCDatasetEntry {
-  id: string;
-  text: string;
-  source: string;
-}
-
-export interface ATCDatasetSearchResult {
-  entries: ATCDatasetEntry[];
-  total: number;
-  offset: number;
-  hasMore: boolean;
-}
-
-export interface DatasetServiceStatus {
-  aircraftMetadata: {
-    loaded: boolean;
-    count: number;
-    lastUpdated: string | null;
-  };
-  historicalIncidents: {
-    loaded: boolean;
-    seedCount: number;
-    totalAvailable: number;
-    lastUpdated: string | null;
-  };
-  atcTranscripts: {
-    available: boolean;
-    totalEntries: number;
-  };
-}
-
-export interface DashboardStats {
-  flights_tracked: number;
-  active_anomalies: number;
-  incidents_today: number;
-  atc_communications_processed: number;
-  dataset_aircraft_loaded: number;
-  dataset_incidents_loaded: number;
-  last_updated: string;
-}
-
-export interface QueryResult {
+export interface NaturalQueryResponse {
   query_id: string;
   original_query: string;
   interpreted_intent: string;
+  entities: Record<string, string>;
   response: string;
-  results: any[];
+  results: unknown[];
   suggested_followups: string[];
 }
 
@@ -224,7 +136,7 @@ export function useFlight(icao24: string) {
 export function useFlightTrack(icao24: string) {
   return useQuery({
     queryKey: ['flights', icao24, 'track'],
-    queryFn: () => apiFetch<any>(`/flights/${icao24}/track`),
+    queryFn: () => apiFetch<FlightTrack>(`/flights/${icao24}/track`),
     enabled: !!icao24,
   });
 }
@@ -280,7 +192,7 @@ export function useIncident(id: string) {
 export function useGenerateBriefing() {
   return useMutation({
     mutationFn: (incidentId: string) => 
-      apiFetch<any>(`/incidents/${incidentId}/briefing`, { method: 'POST' }),
+      apiFetch<IncidentBriefing>(`/incidents/${incidentId}/briefing`, { method: 'POST' }),
   });
 }
 
@@ -303,7 +215,7 @@ export function useCreateIncident() {
 export function useLiveATC(frequency?: string) {
   return useQuery({
     queryKey: ['atc', 'live', frequency],
-    queryFn: () => apiFetch<any>(`/atc/live${frequency ? `?frequency=${frequency}` : ''}`),
+    queryFn: () => apiFetch<LiveATCResponse>(`/atc/live${frequency ? `?frequency=${frequency}` : ''}`),
     refetchInterval: 5000, // Refresh every 5 seconds for live data
   });
 }
@@ -321,7 +233,7 @@ export function useTranscribeAudio() {
       
       if (!response.ok) throw new Error('Transcription failed');
       const data = await response.json();
-      return data.data;
+      return data.data as ATCTranscript;
     },
   });
 }
@@ -330,7 +242,7 @@ export function useTranscribeAudio() {
 export function useNaturalQuery() {
   return useMutation({
     mutationFn: (query: string) => 
-      apiFetch<QueryResult>('/query', {
+      apiFetch<NaturalQueryResponse>('/query', {
         method: 'POST',
         body: JSON.stringify({ query }),
       }),
@@ -353,7 +265,7 @@ export function useAnalyzeImage() {
       
       if (!response.ok) throw new Error('Analysis failed');
       const data = await response.json();
-      return data.data;
+      return data.data as ImageAnalysisResult;
     },
   });
 }
@@ -361,7 +273,7 @@ export function useAnalyzeImage() {
 export function useAnalyzeImageUrl() {
   return useMutation({
     mutationFn: ({ url, type, questions }: { url: string; type: string; questions?: string[] }) =>
-      apiFetch<any>('/images/analyze-url', {
+      apiFetch<ImageAnalysisResult>('/images/analyze-url', {
         method: 'POST',
         body: JSON.stringify({ url, type, questions }),
       }),

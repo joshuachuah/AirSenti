@@ -350,7 +350,7 @@ export function Overview() {
           iconColor: 'text-red-400',
           text: inc.title,
           time: formatRelativeTime(inc.occurred_at),
-          highlight: inc.severity === 'critical',
+          highlight: inc.severity === 'serious' || inc.severity === 'fatal',
         });
       });
     }
@@ -937,3 +937,4 @@ function RadarMapInline({ aircraft }: { aircraft: EnrichedAircraft[] }) {
     </div>
   );
 }
+
