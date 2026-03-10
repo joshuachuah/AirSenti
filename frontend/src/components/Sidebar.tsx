@@ -10,16 +10,26 @@ import {
   ChevronLeft,
   ChevronRight,
   Radar,
+  Satellite,
 } from 'lucide-react';
 import { cn } from '../utils';
 
-export type TabId = 'overview' | 'flights' | 'anomalies' | 'incidents' | 'atc' | 'query' | 'datasets';
+export type TabId =
+  | 'overview'
+  | 'flights'
+  | 'anomalies'
+  | 'incidents'
+  | 'imagery'
+  | 'atc'
+  | 'query'
+  | 'datasets';
 
 const navItems: { id: TabId; label: string; icon: typeof Globe; shortLabel: string }[] = [
   { id: 'overview', label: 'Overview', shortLabel: 'OVR', icon: Globe },
   { id: 'flights', label: 'Flights', shortLabel: 'FLT', icon: Plane },
   { id: 'anomalies', label: 'Anomalies', shortLabel: 'ANM', icon: AlertTriangle },
   { id: 'incidents', label: 'Incidents', shortLabel: 'INC', icon: FileText },
+  { id: 'imagery', label: 'Imagery AI', shortLabel: 'IMG', icon: Satellite },
   { id: 'atc', label: 'ATC Feed', shortLabel: 'ATC', icon: Radio },
   { id: 'query', label: 'AI Query', shortLabel: 'AI', icon: MessageSquare },
   { id: 'datasets', label: 'Datasets', shortLabel: 'DAT', icon: Database },
@@ -42,7 +52,6 @@ export function Sidebar({
         borderRight: '1px solid rgba(0, 255, 200, 0.06)',
       }}
     >
-      {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-hud-border">
         <div className="relative flex-shrink-0">
           <Radar className="w-8 h-8 text-radar-400" />
@@ -62,7 +71,6 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
         {navItems.map(({ id, label, shortLabel, icon: Icon }) => (
           <button
@@ -83,7 +91,6 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* Expand toggle */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center justify-center py-4 border-t border-hud-border text-gray-600 hover:text-radar-400 transition-colors"

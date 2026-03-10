@@ -2,7 +2,7 @@
 // AirSentinel AI - API Client & React Query Hooks
 // ============================================
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   AircraftMetadata,
   ATCDatasetSearchResult,
@@ -48,12 +48,12 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
     },
     ...options,
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Network error' }));
     throw new Error(error.error?.message || error.message || 'Request failed');
   }
-  
+
   const data = await response.json();
   return data.data || data;
 }
@@ -83,23 +83,25 @@ export interface NaturalQueryResponse {
 // Query Hooks
 // ============================================
 
-// Dashboard stats
-export function useDashboardStats() {
+export function useDashboardStats(options?: {
+  enabled?: boolean;
+  refetchInterval?: number;
+}) {
   return useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: () => apiFetch<DashboardStats>('/dashboard/stats'),
-    refetchInterval: 30000, // Refresh every 30 seconds
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
   });
 }
 
-// Flights
 export function useFlights(options?: { limit?: number }) {
   return useQuery({
     queryKey: ['flights', options],
     queryFn: () => apiFetch<{ aircraft: EnrichedAircraft[]; anomalies: FlightAnomaly[] }>(
       `/flights?limit=${options?.limit || 100}`
     ),
-    refetchInterval: 15000, // Refresh every 15 seconds
+    refetchInterval: 15000,
   });
 }
 
@@ -141,25 +143,24 @@ export function useFlightTrack(icao24: string) {
   });
 }
 
-// Anomalies
 export function useAnomalies(options?: { severity?: string; type?: string; limit?: number }) {
   const params = new URLSearchParams();
   if (options?.severity) params.append('severity', options.severity);
   if (options?.type) params.append('type', options.type);
   if (options?.limit) params.append('limit', options.limit.toString());
-  
+
   return useQuery({
     queryKey: ['anomalies', options],
     queryFn: () => apiFetch<FlightAnomaly[]>(`/anomalies?${params}`),
-    refetchInterval: 10000, // Refresh every 10 seconds for alerts
+    refetchInterval: 10000,
   });
 }
 
 export function useAnalyzeAnomaly() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (anomalyId: string) => 
+    mutationFn: (anomalyId: string) =>
       apiFetch<FlightAnomaly>(`/anomalies/${anomalyId}/analyze`, { method: 'POST' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['anomalies'] });
@@ -167,17 +168,15 @@ export function useAnalyzeAnomaly() {
   });
 }
 
-// Incidents
 export function useIncidents(options?: { severity?: string; source?: string; limit?: number }) {
   const params = new URLSearchParams();
   if (options?.severity) params.append('severity', options.severity);
   if (options?.source) params.append('source', options.source);
   if (options?.limit) params.append('limit', options.limit.toString());
-  
+
   return useQuery({
     queryKey: ['incidents', options],
     queryFn: () => apiFetch<Incident[]>(`/incidents?${params}`),
-    refetchInterval: 60000, // Refresh every minute
   });
 }
 
@@ -191,16 +190,16 @@ export function useIncident(id: string) {
 
 export function useGenerateBriefing() {
   return useMutation({
-    mutationFn: (incidentId: string) => 
+    mutationFn: (incidentId: string) =>
       apiFetch<IncidentBriefing>(`/incidents/${incidentId}/briefing`, { method: 'POST' }),
   });
 }
 
 export function useCreateIncident() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (incident: Partial<Incident>) => 
+    mutationFn: (incident: Partial<Incident>) =>
       apiFetch<Incident>('/incidents', {
         method: 'POST',
         body: JSON.stringify(incident),
@@ -211,12 +210,11 @@ export function useCreateIncident() {
   });
 }
 
-// ATC
 export function useLiveATC(frequency?: string) {
   return useQuery({
     queryKey: ['atc', 'live', frequency],
     queryFn: () => apiFetch<LiveATCResponse>(`/atc/live${frequency ? `?frequency=${frequency}` : ''}`),
-    refetchInterval: 5000, // Refresh every 5 seconds for live data
+    refetchInterval: 5000,
   });
 }
 
@@ -225,12 +223,12 @@ export function useTranscribeAudio() {
     mutationFn: async (audioFile: File) => {
       const formData = new FormData();
       formData.append('audio', audioFile);
-      
+
       const response = await fetch(`${API_BASE}/atc/transcribe`, {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) throw new Error('Transcription failed');
       const data = await response.json();
       return data.data as ATCTranscript;
@@ -238,10 +236,9 @@ export function useTranscribeAudio() {
   });
 }
 
-// Natural Language Query
 export function useNaturalQuery() {
   return useMutation({
-    mutationFn: (query: string) => 
+    mutationFn: (query: string) =>
       apiFetch<NaturalQueryResponse>('/query', {
         method: 'POST',
         body: JSON.stringify({ query }),
@@ -249,7 +246,6 @@ export function useNaturalQuery() {
   });
 }
 
-// Image Analysis
 export function useAnalyzeImage() {
   return useMutation({
     mutationFn: async ({ file, type, questions }: { file: File; type: string; questions?: string[] }) => {
@@ -257,12 +253,12 @@ export function useAnalyzeImage() {
       formData.append('image', file);
       formData.append('type', type);
       if (questions) formData.append('questions', JSON.stringify(questions));
-      
+
       const response = await fetch(`${API_BASE}/images/analyze`, {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) throw new Error('Analysis failed');
       const data = await response.json();
       return data.data as ImageAnalysisResult;
@@ -280,15 +276,10 @@ export function useAnalyzeImageUrl() {
   });
 }
 
-// ============================================
-// HF Dataset Hooks
-// ============================================
-
 export function useDatasetStatus() {
   return useQuery({
     queryKey: ['datasets', 'status'],
     queryFn: () => apiFetch<DatasetServiceStatus>('/datasets/status'),
-    refetchInterval: 60000,
   });
 }
 
@@ -333,9 +324,7 @@ export function useHistoricalIncidentSearch(query: string, options?: {
 
   return useQuery({
     queryKey: ['datasets', 'incidents', 'search', query, options],
-    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(
-      `/datasets/incidents/search?${params}`
-    ),
+    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(`/datasets/incidents/search?${params}`),
     enabled: options?.enabled !== false && !!query,
     staleTime: 60000,
   });
@@ -355,9 +344,7 @@ export function useHistoricalIncidents(options?: {
 
   return useQuery({
     queryKey: ['datasets', 'incidents', options],
-    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(
-      `/datasets/incidents?${params}`
-    ),
+    queryFn: () => apiFetch<HistoricalIncidentSearchResult>(`/datasets/incidents?${params}`),
     staleTime: 120000,
   });
 }
