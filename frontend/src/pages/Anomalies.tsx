@@ -1,27 +1,46 @@
+import { useMemo, useState } from 'react';
 import { cn } from '../utils';
 import { AnomalyCard } from '../components/AnomalyCard';
 import { useAnomalies, useFlights, type FlightAnomaly } from '../api/hooks';
 
+const severityOptions = ['all', 'critical', 'high', 'medium', 'low'] as const;
+type SeverityFilter = (typeof severityOptions)[number];
+
 export function Anomalies() {
-  const { data: anomalies } = useAnomalies({ limit: 30 });
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const { data: anomalies } = useAnomalies({
+    limit: 30,
+    severity: severityFilter === 'all' ? undefined : severityFilter,
+  });
   const { data: flightsData } = useFlights({ limit: 20 });
   const flightAnomalies = flightsData?.anomalies || [];
-  const allAnomalies = anomalies && anomalies.length > 0 ? anomalies : flightAnomalies;
+  const allAnomalies = useMemo(() => {
+    const source = anomalies && anomalies.length > 0 ? anomalies : flightAnomalies;
+    return severityFilter === 'all'
+      ? source
+      : source.filter((anomaly) => anomaly.severity === severityFilter);
+  }, [anomalies, flightAnomalies, severityFilter]);
 
   return (
     <div className="space-y-5">
       <div className="hud-panel p-5">
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
           <h2 className="font-display font-bold text-base text-gray-200 tracking-wide">
             DETECTED ANOMALIES
           </h2>
-          <div className="flex gap-1.5">
-            {(['critical', 'high', 'medium', 'low'] as const).map((severity) => (
+          <div className="flex gap-1.5 flex-wrap">
+            {severityOptions.map((severity) => (
               <button
                 key={severity}
+                onClick={() => setSeverityFilter(severity)}
                 className={cn(
-                  'badge text-[10px] py-0.5 px-2.5 cursor-pointer hover:opacity-80 transition-opacity',
-                  `badge-${severity}`,
+                  'badge text-[10px] py-0.5 px-2.5 cursor-pointer transition-all duration-200',
+                  severity === 'all'
+                    ? severityFilter === severity
+                      ? 'badge-info'
+                      : 'border-white/10 text-gray-500 hover:text-radar-400'
+                    : `badge-${severity}`,
+                  severityFilter !== severity && severity !== 'all' && 'opacity-60 hover:opacity-100'
                 )}
               >
                 {severity}

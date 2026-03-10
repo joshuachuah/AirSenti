@@ -35,6 +35,7 @@ import {
   debounce,
 } from '../utils';
 import { FlightCard } from '../components/FlightCard';
+import { FlightReplayPanel } from '../components/FlightReplayPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -544,6 +545,9 @@ function FlightDetailPanel({
                 {formatCoordinates(ac.latitude, ac.longitude)}
               </div>
             </div>
+
+
+            <FlightReplayPanel icao24={ac.icao24} />
 
             {/* Anomalies */}
             {anomalies.length > 0 && (
