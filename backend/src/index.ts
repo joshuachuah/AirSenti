@@ -17,6 +17,7 @@ import {
   generateEmbeddings,
 } from './services/ai-inference';
 import { hfDatasetsClient } from './services/hf-datasets';
+import { loadPersistedAnomalies, loadPersistedIncidents, saveAnomalies, saveIncidents } from './services/persistence';
 import type {
   APIResponse,
   Aircraft,
@@ -259,6 +260,7 @@ function syncAnomalyStore(anomalies: FlightAnomaly[]): FlightAnomaly[] {
   });
 
   anomalyStore.splice(0, anomalyStore.length, ...refreshed);
+  void saveAnomalies(anomalyStore);
   return anomalyStore;
 }
 
@@ -353,6 +355,7 @@ anomaliesRouter.post('/:id/analyze', async (c) => {
   const analysis = `Analysis of ${anomaly.type} anomaly for ${anomaly.callsign || anomaly.flight_icao24}: ${anomaly.details.description}. This type of event typically warrants monitoring but may not indicate immediate safety concerns unless accompanied by emergency communications.`;
   
   anomaly.ai_analysis = analysis;
+  await saveAnomalies(anomalyStore);
   
   return c.json({ success: true, data: anomaly });
 });
@@ -616,6 +619,7 @@ incidentsRouter.post('/', async (c) => {
     };
     
     incidentStore.push(newIncident);
+    await saveIncidents(incidentStore);
     
     return c.json({ success: true, data: newIncident }, 201);
   } catch (error) {
@@ -932,7 +936,16 @@ app.route('/api/datasets', datasets);
 
 (async () => {
   try {
+    const [persistedIncidents, persistedAnomalies] = await Promise.all([
+      loadPersistedIncidents(incidentStore),
+      loadPersistedAnomalies(),
+    ]);
+
+    incidentStore.splice(0, incidentStore.length, ...persistedIncidents);
+    anomalyStore.splice(0, anomalyStore.length, ...persistedAnomalies);
+
     await hfDatasetsClient.initialize();
+    console.log('Persistent stores initialized');
     console.log('HF Datasets service initialized');
   } catch (error) {
     console.error('HF Datasets initialization error:', error);
@@ -967,4 +980,5 @@ export default {
   port,
   fetch: app.fetch,
 };
+
 
