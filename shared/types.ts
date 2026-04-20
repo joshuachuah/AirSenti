@@ -319,10 +319,19 @@ export interface DashboardStats {
   flights_tracked: number;
   active_anomalies: number;
   incidents_today: number;
-  atc_communications_processed: number;
+  atc_transcripts_available: number;
   dataset_aircraft_loaded: number;
   dataset_incidents_loaded: number;
   last_updated: string;
+  data_sources: DataSources;
+}
+
+export interface DataSources {
+  flights: 'live' | 'unavailable';
+  anomalies: 'live' | 'unavailable';
+  incidents: 'asrs' | 'demo';
+  atc: 'archive' | 'demo';
+  ai: 'live' | 'demo';
 }
 
 export interface AlertConfig {

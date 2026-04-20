@@ -25,6 +25,8 @@ import type {
   FlightAnomaly,
   Incident,
   DashboardStats,
+  DataSources,
+  HistoricalIncident,
   BoundingBox,
   GeoCircle,
 } from '../../shared/types';
@@ -508,86 +510,129 @@ app.route('/api/images', images);
 
 const incidentsRouter = new Hono();
 
-// In-memory incident store (would be database in production)
-const incidentStore: Incident[] = [
-  {
-    id: 'INC-001',
-    source: 'faa',
-    title: 'Runway Incursion at KJFK',
-    description: 'Aircraft crossed active runway without clearance during low visibility operations.',
-    occurred_at: new Date(Date.now() - 86400000).toISOString(),
-    reported_at: new Date(Date.now() - 82800000).toISOString(),
-    location: { airport_icao: 'KJFK', latitude: 40.6413, longitude: -73.7781, region: 'New York' },
-    aircraft_involved: [{ callsign: 'DAL1234', type: 'A320', operator: 'Delta Air Lines' }],
-    severity: 'serious',
-    categories: ['runway_incursion', 'low_visibility'],
-    status: 'investigating',
-  },
-  {
-    id: 'INC-002',
-    source: 'ntsb',
-    title: 'Engine Failure on Departure KLAX',
-    description: 'Single engine failure reported shortly after takeoff, aircraft returned safely.',
-    occurred_at: new Date(Date.now() - 172800000).toISOString(),
-    reported_at: new Date(Date.now() - 169200000).toISOString(),
-    location: { airport_icao: 'KLAX', latitude: 33.9416, longitude: -118.4085, region: 'California' },
-    aircraft_involved: [{ callsign: 'UAL789', type: 'B737', operator: 'United Airlines' }],
-    severity: 'moderate',
-    categories: ['mechanical_failure', 'engine'],
-    status: 'preliminary',
-  },
-];
+// User-submitted incident store (ASRS incidents come from HF Datasets)
+const userIncidentStore: Incident[] = [];
 
-// Get all incidents
-incidentsRouter.get('/', (c) => {
+// Adapter: HistoricalIncident (ASRS) → Incident
+function historicalIncidentToIncident(h: HistoricalIncident): Incident {
+  const severityMap: Record<string, Incident['severity']> = {
+    'Human Factors': 'moderate',
+    'Ambiguous': 'moderate',
+    'Conflict': 'serious',
+    'Non-Adherence': 'moderate',
+    'Other': 'minor',
+  };
+
+  return {
+    id: h.id,
+    source: 'user_report' as Incident['source'], // ASRS data, closest source enum
+    title: h.primaryProblem
+      ? `${h.primaryProblem} — ${h.aircraftMakeModel || 'Unknown Aircraft'}`
+      : `ASRS Report ${h.acnNumber}`,
+    description: h.narrative || h.synopsis || 'No narrative available.',
+    occurred_at: h.date || new Date().toISOString(),
+    reported_at: h.date || new Date().toISOString(),
+    location: h.localeReference || h.stateReference
+      ? { region: [h.localeReference, h.stateReference].filter(Boolean).join(', ') }
+      : undefined,
+    aircraft_involved: h.aircraftMakeModel
+      ? [{ type: h.aircraftMakeModel, operator: h.aircraftOperator || undefined }]
+      : undefined,
+    severity: severityMap[h.primaryProblem || ''] || 'moderate',
+    categories: [h.anomaly, h.primaryProblem, h.flightPhase].filter(Boolean) as string[],
+    status: 'final' as Incident['status'],
+    raw_data: h as unknown,
+  };
+}
+
+// Get all incidents (ASRS + user-submitted)
+incidentsRouter.get('/', async (c) => {
   const severity = c.req.query('severity');
   const source = c.req.query('source');
   const limit = parseInt(c.req.query('limit') || '50');
-  
-  let filtered = [...incidentStore];
-  
-  if (severity) filtered = filtered.filter(i => i.severity === severity);
-  if (source) filtered = filtered.filter(i => i.source === source);
-  
-  filtered.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
-  
-  return c.json({
-    success: true,
-    data: filtered.slice(0, limit),
-    meta: { total: incidentStore.length },
-  });
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  try {
+    // Fetch ASRS incidents from HF Datasets
+    const asrsResult = await hfDatasetsClient.browseIncidents({
+      offset,
+      limit,
+      primaryProblem: c.req.query('problem') || undefined,
+      flightPhase: c.req.query('phase') || undefined,
+    });
+
+    const asrsIncidents = asrsResult.incidents.map(historicalIncidentToIncident);
+
+    // Merge with user-submitted incidents
+    const allIncidents = [...asrsIncidents, ...userIncidentStore];
+
+    let filtered = allIncidents;
+    if (severity) filtered = filtered.filter(i => i.severity === severity);
+    if (source) filtered = filtered.filter(i => i.source === source);
+
+    filtered.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+
+    return c.json({
+      success: true,
+      data: filtered.slice(0, limit),
+      meta: { total: asrsResult.total + userIncidentStore.length, offset, hasMore: asrsResult.hasMore },
+    });
+  } catch (error) {
+    console.error('Error fetching incidents:', error);
+    // Fallback to user-submitted only
+    return c.json({
+      success: true,
+      data: userIncidentStore.slice(0, limit),
+      meta: { total: userIncidentStore.length, offset, hasMore: false },
+    });
+  }
 });
 
 // Get incident by ID
-incidentsRouter.get('/:id', (c) => {
+incidentsRouter.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const incident = incidentStore.find(i => i.id === id);
-  
-  if (!incident) {
-    return c.json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: `Incident ${id} not found` },
-    }, 404);
+
+  // Check user-submitted first
+  const userIncident = userIncidentStore.find(i => i.id === id);
+  if (userIncident) {
+    return c.json({ success: true, data: userIncident });
   }
-  
-  return c.json({ success: true, data: incident });
+
+  // Try ASRS by ID
+  const historical = await hfDatasetsClient.getHistoricalIncident(id);
+  if (historical) {
+    return c.json({ success: true, data: historicalIncidentToIncident(historical) });
+  }
+
+  return c.json({
+    success: false,
+    error: { code: 'NOT_FOUND', message: `Incident ${id} not found` },
+  }, 404);
 });
 
 // Generate incident briefing
 incidentsRouter.post('/:id/briefing', async (c) => {
   try {
     const id = c.req.param('id');
-    const incident = incidentStore.find(i => i.id === id);
-    
+
+    // Find incident from either source
+    let incident: Incident | undefined = userIncidentStore.find(i => i.id === id);
+    if (!incident) {
+      const historical = await hfDatasetsClient.getHistoricalIncident(id);
+      if (historical) {
+        incident = historicalIncidentToIncident(historical);
+      }
+    }
+
     if (!incident) {
       return c.json({
         success: false,
         error: { code: 'NOT_FOUND', message: `Incident ${id} not found` },
       }, 404);
     }
-    
+
     const briefing = await generateIncidentBriefing(incident);
-    
+
     return c.json({ success: true, data: briefing });
   } catch (error) {
     console.error('Error generating briefing:', error);
@@ -604,7 +649,7 @@ incidentsRouter.post('/', async (c) => {
     const body = await c.req.json();
     
     const newIncident: Incident = {
-      id: `INC-${Date.now()}`,
+      id: `USR-${Date.now()}`,
       source: body.source || 'user_report',
       source_url: body.source_url,
       title: body.title,
@@ -618,8 +663,8 @@ incidentsRouter.post('/', async (c) => {
       status: 'reported',
     };
     
-    incidentStore.push(newIncident);
-    await saveIncidents(incidentStore);
+    userIncidentStore.push(newIncident);
+    await saveIncidents(userIncidentStore);
     
     return c.json({ success: true, data: newIncident }, 201);
   } catch (error) {
@@ -663,10 +708,12 @@ app.post('/api/query', async (c) => {
         }
         break;
         
-      case 'incident_search':
-        results = incidentStore.slice(0, 5);
-        responseText = `Found ${results.length} recent incidents.`;
+      case 'incident_search': {
+        const incidentResult = await hfDatasetsClient.browseIncidents({ limit: 5 });
+        results = incidentResult.incidents.map(historicalIncidentToIncident);
+        responseText = `Found ${incidentResult.total} incidents in ASRS database.`;
         break;
+      }
         
       case 'anomaly_report': {
         const { anomalies: liveAnomalies } = await refreshGlobalAnomalies();
@@ -721,24 +768,32 @@ app.get('/api/dashboard/stats', async (c) => {
     // Get current counts
     const datasetStatus = hfDatasetsClient.getStatus();
     const { aircraft, anomalies } = await refreshGlobalAnomalies();
+    
+    const flightsLive = aircraft.length > 0;
+    const incidentsLive = datasetStatus.historicalIncidents.loaded;
+    const atcLive = datasetStatus.atcTranscripts.available;
+    
     const stats: DashboardStats = {
       flights_tracked: aircraft.length,
       active_anomalies: anomalies.filter(
         a => new Date(a.detected_at).getTime() > Date.now() - 3600000
       ).length,
-      incidents_today: incidentStore.filter(
+      incidents_today: userIncidentStore.filter(
         i => new Date(i.occurred_at).toDateString() === new Date().toDateString()
       ).length,
-      atc_communications_processed: 156,
+      atc_transcripts_available: datasetStatus.atcTranscripts.totalEntries,
       dataset_aircraft_loaded: datasetStatus.aircraftMetadata.count,
       dataset_incidents_loaded: datasetStatus.historicalIncidents.seedCount,
       last_updated: new Date().toISOString(),
+      data_sources: {
+        flights: flightsLive ? 'live' : 'unavailable',
+        anomalies: flightsLive ? 'live' : 'unavailable',
+        incidents: incidentsLive ? 'asrs' : 'demo',
+        atc: atcLive ? 'archive' : 'demo',
+        ai: isDemoMode ? 'demo' : 'live',
+      },
     };
 
-    if (stats.flights_tracked === 0) {
-      stats.flights_tracked = 12847;
-    }
-    
     return c.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -937,11 +992,11 @@ app.route('/api/datasets', datasets);
 (async () => {
   try {
     const [persistedIncidents, persistedAnomalies] = await Promise.all([
-      loadPersistedIncidents(incidentStore),
+      loadPersistedIncidents(userIncidentStore),
       loadPersistedAnomalies(),
     ]);
 
-    incidentStore.splice(0, incidentStore.length, ...persistedIncidents);
+    userIncidentStore.splice(0, userIncidentStore.length, ...persistedIncidents);
     anomalyStore.splice(0, anomalyStore.length, ...persistedAnomalies);
 
     await hfDatasetsClient.initialize();
@@ -957,6 +1012,26 @@ app.route('/api/datasets', datasets);
 // ============================================
 
 const port = parseInt(env.PORT);
+
+// ============================================
+// Capabilities Endpoint
+// ============================================
+
+app.get('/api/capabilities', (c) => {
+  const datasetStatus = hfDatasetsClient.getStatus();
+  return c.json({
+    success: true,
+    data: {
+      flights: { live: true, source: 'opensky' },
+      anomalies: { live: true, source: 'detection-engine' },
+      incidents: { live: datasetStatus.historicalIncidents.loaded, source: datasetStatus.historicalIncidents.loaded ? 'asrs' : 'demo' },
+      atc: { live: datasetStatus.atcTranscripts.available, source: datasetStatus.atcTranscripts.available ? 'archive' : 'demo' },
+      ai_inference: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+      image_analysis: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+      natural_language_query: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+    },
+  });
+});
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
