@@ -126,6 +126,7 @@ function MetricTile({
   sub,
   color,
   delay,
+  sourceBadge,
 }: {
   icon: typeof Plane;
   label: string;
@@ -133,7 +134,15 @@ function MetricTile({
   sub?: string;
   color: string;
   delay: number;
+  sourceBadge?: 'live' | 'archive' | 'asrs' | 'demo' | 'unavailable';
 }) {
+  const badgeConfig: Record<string, { label: string; cls: string }> = {
+    live: { label: 'LIVE', cls: 'bg-green-500/20 text-green-400' },
+    archive: { label: 'ARCHIVE', cls: 'bg-blue-500/20 text-blue-400' },
+    asrs: { label: 'ASRS', cls: 'bg-amber-500/20 text-amber-400' },
+    demo: { label: 'DEMO', cls: 'bg-yellow-500/20 text-yellow-500' },
+    unavailable: { label: 'OFFLINE', cls: 'bg-gray-500/20 text-gray-500' },
+  };
   const colorVars: Record<string, { text: string; bg: string; fill: string; stroke: string }> = {
     radar: {
       text: 'text-radar-400',
@@ -174,6 +183,11 @@ function MetricTile({
             <Icon className={cn('w-4 h-4', c.text)} />
           </div>
           <span className="data-label">{label}</span>
+          {sourceBadge && badgeConfig[sourceBadge] && (
+            <span className={cn('text-[8px] font-mono font-bold px-1.5 py-0.5 rounded', badgeConfig[sourceBadge].cls)}>
+              {badgeConfig[sourceBadge].label}
+            </span>
+          )}
         </div>
         <div className="flex items-end justify-between">
           <div>
@@ -477,6 +491,7 @@ export function Overview() {
           sub="15s refresh"
           color="radar"
           delay={80}
+          sourceBadge={stats?.data_sources?.flights}
         />
         <MetricTile
           icon={AlertTriangle}
@@ -485,6 +500,7 @@ export function Overview() {
           sub={allAnomalies.length > 0 ? `${allAnomalies.filter((a) => a.severity === 'high' || a.severity === 'critical').length} high+` : 'clear'}
           color="amber"
           delay={130}
+          sourceBadge={stats?.data_sources?.anomalies}
         />
         <MetricTile
           icon={FileText}
@@ -493,14 +509,16 @@ export function Overview() {
           sub={incidents?.length ? `${incidents.length} total` : 'none'}
           color="red"
           delay={180}
+          sourceBadge={stats?.data_sources?.incidents === 'asrs' ? 'asrs' : stats?.data_sources?.incidents}
         />
         <MetricTile
           icon={Radio}
-          label="ATC Processed"
-          value={stats?.atc_communications_processed || 0}
+          label="ATC Available"
+          value={stats?.atc_transcripts_available || 0}
           sub="transcripts"
           color="blue"
           delay={230}
+          sourceBadge={stats?.data_sources?.atc}
         />
       </div>
 

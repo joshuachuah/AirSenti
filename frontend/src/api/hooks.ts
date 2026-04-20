@@ -95,6 +95,14 @@ export function useDashboardStats(options?: {
   });
 }
 
+export function useCapabilities() {
+  return useQuery({
+    queryKey: ['capabilities'],
+    queryFn: () => apiFetch<Record<string, { live: boolean; source: string }>>('/capabilities'),
+    staleTime: 60000,
+  });
+}
+
 export function useFlights(options?: { limit?: number }) {
   return useQuery({
     queryKey: ['flights', options],

@@ -25,6 +25,7 @@ import type {
   FlightAnomaly,
   Incident,
   DashboardStats,
+  DataSources,
   BoundingBox,
   GeoCircle,
 } from '../../shared/types';
@@ -721,6 +722,11 @@ app.get('/api/dashboard/stats', async (c) => {
     // Get current counts
     const datasetStatus = hfDatasetsClient.getStatus();
     const { aircraft, anomalies } = await refreshGlobalAnomalies();
+    
+    const flightsLive = aircraft.length > 0;
+    const incidentsLive = datasetStatus.historicalIncidents.loaded;
+    const atcLive = datasetStatus.atcTranscripts.available;
+    
     const stats: DashboardStats = {
       flights_tracked: aircraft.length,
       active_anomalies: anomalies.filter(
@@ -729,16 +735,19 @@ app.get('/api/dashboard/stats', async (c) => {
       incidents_today: incidentStore.filter(
         i => new Date(i.occurred_at).toDateString() === new Date().toDateString()
       ).length,
-      atc_communications_processed: 156,
+      atc_transcripts_available: datasetStatus.atcTranscripts.totalEntries,
       dataset_aircraft_loaded: datasetStatus.aircraftMetadata.count,
       dataset_incidents_loaded: datasetStatus.historicalIncidents.seedCount,
       last_updated: new Date().toISOString(),
+      data_sources: {
+        flights: flightsLive ? 'live' : 'unavailable',
+        anomalies: flightsLive ? 'live' : 'unavailable',
+        incidents: incidentsLive ? 'asrs' : 'demo',
+        atc: atcLive ? 'archive' : 'demo',
+        ai: isDemoMode ? 'demo' : 'live',
+      },
     };
 
-    if (stats.flights_tracked === 0) {
-      stats.flights_tracked = 12847;
-    }
-    
     return c.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -957,6 +966,26 @@ app.route('/api/datasets', datasets);
 // ============================================
 
 const port = parseInt(env.PORT);
+
+// ============================================
+// Capabilities Endpoint
+// ============================================
+
+app.get('/api/capabilities', (c) => {
+  const datasetStatus = hfDatasetsClient.getStatus();
+  return c.json({
+    success: true,
+    data: {
+      flights: { live: true, source: 'opensky' },
+      anomalies: { live: true, source: 'detection-engine' },
+      incidents: { live: datasetStatus.historicalIncidents.loaded, source: datasetStatus.historicalIncidents.loaded ? 'asrs' : 'demo' },
+      atc: { live: datasetStatus.atcTranscripts.available, source: datasetStatus.atcTranscripts.available ? 'archive' : 'demo' },
+      ai_inference: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+      image_analysis: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+      natural_language_query: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },
+    },
+  });
+});
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗

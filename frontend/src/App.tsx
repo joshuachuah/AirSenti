@@ -9,7 +9,8 @@ import {
 import { Clock } from 'lucide-react';
 import { Sidebar, type TabId } from './components/Sidebar';
 import { Header } from './components/Header';
-import { useDashboardStats } from './api/hooks';
+import { useDashboardStats, useCapabilities } from './api/hooks';
+import { cn } from './utils';
 import { formatRelativeTime } from './utils';
 
 const Overview = lazy(async () => ({ default: (await import('./pages/Overview')).Overview }));
@@ -57,11 +58,19 @@ export default function App() {
     enabled: liveTabs.has(activeTab),
     refetchInterval: 30000,
   });
+  const { data: capabilities } = useCapabilities();
+
+  const aiLive = capabilities?.ai_inference?.live ?? false;
 
   const ActivePage = pages[activeTab];
 
   return (
     <div className="relative z-10 min-h-screen flex">
+      {!aiLive && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-1.5 text-center text-[10px] font-mono text-yellow-500">
+          ⚠️ DEMO MODE — AI features using simulated responses. Set HUGGINGFACE_API_KEY for live analysis.
+        </div>
+      )}
       <Sidebar
         activeTab={activeTab}
         onTabChange={(tab) => {
@@ -69,7 +78,7 @@ export default function App() {
         }}
       />
 
-      <div className="flex-1 ml-[72px] flex flex-col min-h-screen">
+      <div className={cn('flex-1 ml-[72px] flex flex-col min-h-screen', !aiLive && 'mt-8')}>
         <Header />
 
         <main className="flex-1 p-5 overflow-y-auto" key={activeTab}>
@@ -85,7 +94,7 @@ export default function App() {
               <span className="text-gray-800">|</span>
               <span>DATA: OPENSKY NETWORK</span>
               <span className="text-gray-800">|</span>
-              <span>AI: HUGGING FACE</span>
+              <span>AI: {aiLive ? 'HUGGING FACE' : 'DEMO MODE'}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="w-3 h-3" />
