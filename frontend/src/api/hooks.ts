@@ -62,6 +62,9 @@ export interface LiveATCResponse {
   frequency: string;
   airport: string;
   stream_url: string | null;
+  is_live: boolean;
+  source: 'archive' | 'demo' | 'unavailable';
+  total_available: number;
   recent_transmissions: Array<{
     timestamp: string;
     speaker: 'pilot' | 'atc' | 'unknown';
@@ -214,7 +217,7 @@ export function useLiveATC(frequency?: string) {
   return useQuery({
     queryKey: ['atc', 'live', frequency],
     queryFn: () => apiFetch<LiveATCResponse>(`/atc/live${frequency ? `?frequency=${frequency}` : ''}`),
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Archive data doesn't need 5s polling
   });
 }
 

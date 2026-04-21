@@ -404,36 +404,46 @@ atc.post('/transcribe', async (c) => {
   }
 });
 
-// Get mock live ATC feed (for demo)
-atc.get('/live', (c) => {
+// Get ATC transcript feed (from archive when live audio unavailable)
+atc.get('/live', async (c) => {
   const frequency = c.req.query('frequency') || '118.100';
-  
-  // Return mock live data
-  return c.json({
-    success: true,
-    data: {
-      frequency,
-      airport: 'KLAX',
-      stream_url: null,
-      recent_transmissions: [
-        {
-          timestamp: new Date(Date.now() - 30000).toISOString(),
-          speaker: 'atc',
-          text: 'American 234, cleared for takeoff runway 25L, wind 250 at 12.',
-        },
-        {
-          timestamp: new Date(Date.now() - 20000).toISOString(),
-          speaker: 'pilot',
-          text: 'Cleared for takeoff 25L, American 234.',
-        },
-        {
-          timestamp: new Date(Date.now() - 10000).toISOString(),
-          speaker: 'atc',
-          text: 'Delta 567, contact SoCal departure 124.9.',
-        },
-      ],
-    },
-  });
+  const limit = parseInt(c.req.query('limit') || '10');
+
+  try {
+    const result = await hfDatasetsClient.getATCTranscripts(0, limit);
+    const transmissions = result.entries.map((entry, i) => ({
+      timestamp: new Date(Date.now() - (i + 1) * 15000).toISOString(),
+      speaker: 'unknown' as const,
+      text: entry.text,
+    }));
+
+    return c.json({
+      success: true,
+      data: {
+        frequency,
+        airport: 'ARCHIVE',
+        stream_url: null,
+        is_live: false,
+        source: result.entries.length > 0 && result.entries[0].source.startsWith('mock') ? 'demo' : 'archive',
+        total_available: result.total,
+        recent_transmissions: transmissions,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching ATC transcripts:', error);
+    return c.json({
+      success: true,
+      data: {
+        frequency,
+        airport: 'UNAVAILABLE',
+        stream_url: null,
+        is_live: false,
+        source: 'unavailable',
+        total_available: 0,
+        recent_transmissions: [],
+      },
+    });
+  }
 });
 
 app.route('/api/atc', atc);
