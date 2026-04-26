@@ -1,304 +1,229 @@
 # AirSentinel AI
 
-## Multimodal Aviation Intelligence & Incident Analysis Platform
+AirSentinel AI is an aviation intelligence dashboard for tracking live aircraft, surfacing flight anomalies, browsing aviation incident reports, and experimenting with AI-assisted aviation analysis.
 
-![AirSentinel AI](https://img.shields.io/badge/AirSentinel-AI-00ffc8?style=for-the-badge)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?style=for-the-badge)
-![Bun](https://img.shields.io/badge/Bun-1.1-f472b6?style=for-the-badge)
-![React](https://img.shields.io/badge/React-18.3-61dafb?style=for-the-badge)
+The current project goal is honesty over polish theater: every feature should make clear whether it is using live data, archive data, ASRS data, demo data, or unavailable services.
 
-> "Bloomberg Terminal meets aviation safety, powered by multimodal AI."
+## Current Status
 
-AirSentinel AI is a **real-time aviation intelligence platform** that monitors aircraft activity, pilot/ATC communications, satellite imagery, and public incident reports to detect anomalous flight behavior, analyze incidents, and provide natural language querying capabilities.
+Last updated: April 26, 2026.
 
----
+| Area | Status | Notes |
+| --- | --- | --- |
+| Flight tracking | Live when OpenSky is reachable | Uses OpenSky state data and local anomaly detection. Shows unavailable instead of fake counts when no aircraft are returned. |
+| Anomaly detection | Local engine | Detects emergency squawks, rapid descent, altitude drops, holding patterns, unusual speeds, go-arounds, route deviations, and diversions from aircraft state data. |
+| Incidents | ASRS archive plus user reports | Main now serves ASRS historical incident data through the Hugging Face datasets client and keeps user-submitted reports separate. |
+| Dashboard source badges | Implemented | Dashboard stats expose `live`, `unavailable`, `asrs`, `archive`, and `demo` source states. |
+| AI inference | Live with `HUGGINGFACE_API_KEY`, demo without it | The app shows demo-mode indicators when AI responses are mocked. |
+| ATC feed | Open PR | PR #3 replaces hardcoded ATC messages with archive/demo-aware transcript data and removes fake "live" labeling. Until PR #3 is merged, `main` may still differ from that ATC behavior. |
+| Persistence | Local JSON-backed stores | User incidents and anomalies are persisted under backend data storage. Postgres/Redis are present for future production work but are not the primary data layer yet. |
 
-## 🚀 Features
+## What Works Today
 
-### Core Capabilities
+- React dashboard with overview, flights, anomalies, incidents, imagery, ATC, query, and datasets views.
+- Bun/Hono backend API.
+- Shared TypeScript types between frontend and backend.
+- OpenSky-based flight queries.
+- Local anomaly detection and anomaly persistence.
+- ASRS incident browsing and mapping into the app's incident shape.
+- Hugging Face dataset integration for aircraft metadata, ASRS incidents, and ATC dataset access.
+- Hugging Face inference integration with demo-mode fallback.
+- Source badges and capability endpoints so the UI does not present demo/archive data as live.
+- Backend regression tests for API response shape, ASRS incident behavior, anomaly detection, and persistence. PR #3 adds ATC payload metadata coverage.
 
-| Feature | Description | HuggingFace Tasks |
-|---------|-------------|-------------------|
-| **Live Flight Monitoring** | Track aircraft in real-time with anomaly detection | - |
-| **ATC Audio Intelligence** | Transcribe and analyze pilot/ATC communications | Audio-Text-to-Text, ASR |
-| **Incident Auto-Briefings** | Generate AI-powered incident analysis reports | Summarization, QA |
-| **Visual Context Analysis** | Analyze satellite/airport imagery | Image-Text-to-Text, VQA, Object Detection |
-| **Natural Language Queries** | Ask questions about aviation data | Zero-Shot Classification, Text Generation |
+## Important Limitations
 
-### Anomaly Detection
+- This is not a certified aviation safety system.
+- Live ATC streaming is not integrated yet. ATC transcript work is archive/demo-oriented unless PR #3 has been merged and deployed.
+- AI output is advisory only and can be mocked in demo mode.
+- OpenSky availability and rate limits affect live flight/anomaly data.
+- Docker support exists, but day-to-day local development currently uses Bun directly.
+- Some production infrastructure variables exist before the app fully uses those systems.
 
-- 🔴 **Emergency Squawks** (7500, 7600, 7700)
-- 📉 **Rapid Altitude Changes**
-- 🔄 **Holding Patterns**
-- ⚡ **Unusual Speeds**
-- ✈️ **Go-Arounds**
-- 🛣️ **Route Deviations**
+## Architecture
 
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     AirSentinel AI                          │
-├─────────────────────────────────────────────────────────────┤
-│  Frontend (React + TypeScript)                              │
-│  ├── Real-time Dashboard                                    │
-│  ├── Interactive Map Visualization                          │
-│  ├── Anomaly Alerts                                         │
-│  └── Natural Language Query Interface                       │
-├─────────────────────────────────────────────────────────────┤
-│  Backend (Bun + Hono)                                       │
-│  ├── REST API                                               │
-│  ├── OpenSky Network Integration                            │
-│  ├── Anomaly Detection Engine                               │
-│  └── HuggingFace AI Inference                               │
-├─────────────────────────────────────────────────────────────┤
-│  AI/ML Services (HuggingFace)                               │
-│  ├── Whisper (ASR)                                          │
-│  ├── BLIP (Image Captioning)                                │
-│  ├── DETR (Object Detection)                                │
-│  ├── ViLT (VQA)                                             │
-│  ├── BART (Summarization, Zero-Shot)                        │
-│  └── Sentence Transformers (Embeddings)                     │
-├─────────────────────────────────────────────────────────────┤
-│  External Data Sources                                      │
-│  ├── OpenSky Network (Live Flight Data)                     │
-│  ├── FAA/NTSB (Incident Reports)                            │
-│  └── LiveATC (Audio Streams)                                │
-└─────────────────────────────────────────────────────────────┘
+```text
+airsentinel/
+  backend/
+    src/
+      config/          Environment parsing and feature flags
+      services/
+        ai-inference.ts         Hugging Face inference and demo fallbacks
+        anomaly-detection.ts    Local flight anomaly rules
+        hf-datasets.ts          Hugging Face datasets client
+        opensky.ts              OpenSky flight state client
+        persistence.ts          Local persisted incident/anomaly stores
+      index.ts         Hono API server and route definitions
+  frontend/
+    src/
+      api/             TanStack Query hooks
+      components/      Reusable dashboard panels/cards
+      pages/           Main application views
+      utils/           Formatting and display helpers
+  shared/
+    types.ts           Shared API/domain types
 ```
 
----
+## Tech Stack
 
-## 📦 Installation
+| Layer | Tools |
+| --- | --- |
+| Backend | Bun, Hono, TypeScript, Zod |
+| Frontend | React 18, Vite, TypeScript, Tailwind CSS, TanStack Query |
+| Data sources | OpenSky Network, Hugging Face datasets, ASRS-derived archive data |
+| AI | Hugging Face Inference API with demo fallbacks |
+| Testing | Bun test, TypeScript build checks |
+| Optional services | Docker, Redis, PostgreSQL/PostGIS |
+
+## Data Sources and Modes
+
+AirSentinel intentionally labels data provenance:
+
+- `live`: currently fetched from a live external service.
+- `unavailable`: live source could not return usable data.
+- `asrs`: historical aviation safety reports from ASRS archive data.
+- `archive`: non-live dataset/archive content.
+- `demo`: mocked fallback data or mocked AI responses.
+
+The backend also exposes `/api/capabilities` so the frontend can show current capability status instead of guessing.
+
+## Local Development
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) v1.1+
-- Node.js 18+ (optional, for npm compatibility)
-- HuggingFace API Key (optional, for AI features)
+- Bun 1.1 or newer.
+- Node.js 18 or newer is useful for compatibility, but Bun is the primary runtime.
+- Optional: Hugging Face API key for live AI inference.
+- Optional: OpenSky credentials for authenticated flight data access.
 
-### Quick Start
+### Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/airsentinel-ai.git
-cd airsentinel-ai
-
-# Install backend dependencies
 cd backend
 bun install
 
-# Install frontend dependencies
 cd ../frontend
 bun install
-
-# Start the backend (from backend directory)
-cd ../backend
-bun run dev
-
-# Start the frontend (from frontend directory, in new terminal)
-cd ../frontend
-bun run dev
 ```
 
-### Environment Variables
+### Environment
 
-Create a `.env` file in the `backend` directory:
+Create or update `backend/.env`:
 
 ```env
-# Server
 PORT=3000
 NODE_ENV=development
 
-# External APIs (optional - runs in demo mode without these)
-HUGGINGFACE_API_KEY=hf_your_api_key_here
-OPENSKY_USERNAME=your_username
-OPENSKY_PASSWORD=your_password
+# Optional. Without this, AI features run in demo mode.
+HUGGINGFACE_API_KEY=
 
-# Feature Flags
-ENABLE_LIVE_TRACKING=true
-ENABLE_ATC_PROCESSING=true
-ENABLE_IMAGE_ANALYSIS=true
+# Optional. OpenSky can be used without credentials, but rate limits may apply.
+OPENSKY_USERNAME=
+OPENSKY_PASSWORD=
+OPENSKY_CLIENT_ID=
+OPENSKY_CLIENT_SECRET=
+
+# Dataset and polling behavior.
+ENABLE_HF_DATASETS=true
+HF_INCIDENT_SEED_COUNT=200
+HF_DATASETS_RATE_LIMIT_MS=500
+OPENSKY_RATE_LIMIT_MS=10000
 ```
 
----
+### Run
 
-## 📡 API Reference
-
-### Flights
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/flights` | GET | Get all tracked flights |
-| `/api/flights/area` | GET | Get flights in bounding box |
-| `/api/flights/radius` | GET | Get flights within radius |
-| `/api/flights/:icao24` | GET | Get specific flight |
-| `/api/flights/:icao24/track` | GET | Get flight track history |
-
-### Anomalies
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/anomalies` | GET | Get detected anomalies |
-| `/api/anomalies/:id` | GET | Get anomaly details |
-| `/api/anomalies/:id/analyze` | POST | AI analysis of anomaly |
-
-### Incidents
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/incidents` | GET | Get aviation incidents |
-| `/api/incidents/:id` | GET | Get incident details |
-| `/api/incidents/:id/briefing` | POST | Generate AI briefing |
-| `/api/incidents` | POST | Report new incident |
-
-### ATC
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/atc/transcribe` | POST | Transcribe ATC audio |
-| `/api/atc/live` | GET | Get live ATC feed |
-
-### AI Query
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/query` | POST | Natural language query |
-
-### Images
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/images/analyze` | POST | Analyze uploaded image |
-| `/api/images/analyze-url` | POST | Analyze image from URL |
-
----
-
-## 🤖 HuggingFace Models Used
-
-| Task | Model | Purpose |
-|------|-------|---------|
-| ASR | `openai/whisper-large-v3` | ATC audio transcription |
-| Image Captioning | `Salesforce/blip-image-captioning-large` | Aviation image description |
-| Object Detection | `facebook/detr-resnet-50` | Aircraft/runway detection |
-| VQA | `dandelin/vilt-b32-finetuned-vqa` | Visual question answering |
-| Summarization | `facebook/bart-large-cnn` | Incident summarization |
-| Text Generation | `mistralai/Mixtral-8x7B-Instruct-v0.1` | Briefing generation |
-| Zero-Shot | `facebook/bart-large-mnli` | Query classification |
-| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Similarity search |
-
----
-
-## 📊 Data Sources
-
-- **[OpenSky Network](https://opensky-network.org/)** - Live flight telemetry (ADS-B)
-- **[FAA](https://www.faa.gov/)** / **[NTSB](https://www.ntsb.gov/)** - Incident reports
-- **[LiveATC](https://www.liveatc.net/)** - ATC audio streams
-- **[NOAA](https://www.noaa.gov/)** - Weather data
-
----
-
-## 🎨 Tech Stack
-
-### Backend
-- **Runtime**: Bun
-- **Framework**: Hono
-- **Language**: TypeScript
-- **AI**: HuggingFace Inference API
-
-### Frontend
-- **Framework**: React 18
-- **Build**: Vite
-- **Styling**: Tailwind CSS
-- **State**: TanStack Query
-- **Charts**: Recharts
-
----
-
-## 🔧 Development
-
-### Project Structure
-
-```
-airsentinel/
-├── backend/
-│   ├── src/
-│   │   ├── config/          # Environment configuration
-│   │   ├── services/        # Business logic
-│   │   │   ├── opensky.ts   # Flight data client
-│   │   │   ├── anomaly-detection.ts
-│   │   │   └── ai-inference.ts
-│   │   └── index.ts         # Main server
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── api/             # API hooks
-│   │   ├── components/      # React components
-│   │   ├── utils/           # Utilities
-│   │   └── App.tsx          # Main application
-│   └── package.json
-└── shared/
-    └── types.ts             # Shared TypeScript types
-```
-
-### Running Tests
+Terminal 1:
 
 ```bash
-# Backend tests
+cd backend
+bun run dev
+```
+
+Terminal 2:
+
+```bash
+cd frontend
+bun run dev
+```
+
+Default URLs:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:3000`
+
+## Verification
+
+Backend:
+
+```bash
 cd backend
 bun test
-
-# Frontend tests
-cd frontend
-bun test
+bunx tsc --noEmit
 ```
 
----
-
-## 🚢 Deployment
-
-### Docker
+Frontend:
 
 ```bash
-docker-compose up -d
+cd frontend
+bun run build
 ```
 
-### Manual Deployment
+Recent verification from PR #3 work:
 
-1. Build frontend: `cd frontend && bun run build`
-2. Start backend: `cd backend && bun run start`
-3. Serve frontend build from backend or CDN
+- Backend tests passed: 8 tests.
+- Frontend production build passed.
 
----
+## API Overview
 
-## 📄 License
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/flights` | GET | Current tracked aircraft and related anomalies. |
+| `/api/flights/area` | GET | Aircraft inside a bounding box. |
+| `/api/flights/radius` | GET | Aircraft near a point. |
+| `/api/flights/:icao24` | GET | Specific aircraft by ICAO24. |
+| `/api/flights/:icao24/track` | GET | Flight track history when available. |
+| `/api/anomalies` | GET | Recent detected anomalies. |
+| `/api/anomalies/:id` | GET | Single anomaly. |
+| `/api/anomalies/:id/analyze` | POST | AI/demo analysis for an anomaly. |
+| `/api/incidents` | GET | ASRS/user incident list with filters and pagination. |
+| `/api/incidents/:id` | GET | Single incident. |
+| `/api/incidents/:id/briefing` | POST | AI/demo incident briefing. |
+| `/api/incidents` | POST | Create a user-submitted incident. |
+| `/api/atc/transcribe` | POST | Transcribe uploaded ATC audio. |
+| `/api/atc/live` | GET | ATC feed endpoint. See current branch/PR status for live vs archive behavior. |
+| `/api/query` | POST | Natural language query endpoint. |
+| `/api/images/analyze` | POST | Analyze uploaded image. |
+| `/api/images/analyze-url` | POST | Analyze image by URL. |
+| `/api/datasets/status` | GET | Dataset service health and counts. |
+| `/api/capabilities` | GET | Current capability/source status. |
 
-MIT License - See [LICENSE](LICENSE) for details.
+## Docker
 
----
+The repository includes `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile`.
 
-## 🤝 Contributing
+```bash
+docker compose up --build
+```
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
+Use direct Bun development first if you are actively changing code. Docker is better for a production-like smoke test.
 
----
+## Roadmap
 
-## 📞 Support
+Near-term:
 
-- 📧 Email: support@airsentinel.ai
-- 💬 Discord: [Join our server](https://discord.gg/airsentinel)
-- 🐦 Twitter: [@AirSentinelAI](https://twitter.com/airsentinelai)
+- Merge PR #3 so ATC no longer presents hardcoded messages as live communications.
+- Add end-to-end smoke tests around source badges and demo/archive/live states.
+- Improve README/API docs after PR #3 lands on `main`.
+- Add clearer local setup scripts for starting frontend and backend together.
 
----
+Later:
 
-<div align="center">
-  <br />
-  <p>
-    <strong>AirSentinel AI</strong> - Making aviation intelligence accessible
-  </p>
-  <p>
-    Built with ❤️ using HuggingFace, OpenSky Network, and modern web technologies
-  </p>
-</div>
+- Real LiveATC or licensed ATC audio integration.
+- Authenticated OpenSky OAuth flow if needed.
+- Database-backed persistence for incidents, anomalies, and user activity.
+- Production deployment guide.
+- More robust observability and error reporting.
+
+## Product Principle
+
+AirSentinel should be something worth showing, but it should never overstate what it knows. If a feature is archive-backed, mocked, unavailable, or experimental, the product should say that clearly in the UI and API.
