@@ -412,12 +412,19 @@ atc.get('/live', async (c) => {
   const limit = parseInt(c.req.query('limit') || '10');
 
   try {
+    await initializationPromise;
+
     const result = await hfDatasetsClient.getATCTranscripts(0, limit);
     const transmissions = result.entries.map((entry, i) => ({
       timestamp: new Date(Date.now() - (i + 1) * 15000).toISOString(),
       speaker: 'unknown' as const,
       text: entry.text,
     }));
+    const source = result.entries.length > 0 && result.entries[0].source.startsWith('mock')
+      ? 'demo'
+      : result.total > 0
+        ? 'archive'
+        : 'unavailable';
 
     return c.json({
       success: true,
@@ -426,7 +433,7 @@ atc.get('/live', async (c) => {
         airport: 'ARCHIVE',
         stream_url: null,
         is_live: false,
-        source: result.entries.length > 0 && result.entries[0].source.startsWith('mock') ? 'demo' : 'archive',
+        source,
         total_available: result.total,
         recent_transmissions: transmissions,
       },
