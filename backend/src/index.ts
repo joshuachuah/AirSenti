@@ -513,6 +513,59 @@ const incidentsRouter = new Hono();
 // User-submitted incident store (ASRS incidents come from HF Datasets)
 const userIncidentStore: Incident[] = [];
 
+function toUTCDate(year: number, month = 1, day = 1): string | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed.toISOString();
+}
+
+function normalizeASRSDate(date: string | null): string {
+  const fallback = new Date().toISOString();
+  const raw = date?.trim();
+
+  if (!raw) {
+    return fallback;
+  }
+
+  const compactDay = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactDay) {
+    return toUTCDate(
+      Number(compactDay[1]),
+      Number(compactDay[2]),
+      Number(compactDay[3])
+    ) ?? fallback;
+  }
+
+  const compactMonth = raw.match(/^(\d{4})(\d{2})$/);
+  if (compactMonth) {
+    return toUTCDate(Number(compactMonth[1]), Number(compactMonth[2])) ?? fallback;
+  }
+
+  const isoMonth = raw.match(/^(\d{4})-(\d{2})$/);
+  if (isoMonth) {
+    return toUTCDate(Number(isoMonth[1]), Number(isoMonth[2])) ?? fallback;
+  }
+
+  const yearOnly = raw.match(/^(\d{4})$/);
+  if (yearOnly) {
+    return toUTCDate(Number(yearOnly[1])) ?? fallback;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+}
+
 // Adapter: HistoricalIncident (ASRS) → Incident
 function historicalIncidentToIncident(h: HistoricalIncident): Incident {
   const severityMap: Record<string, Incident['severity']> = {
@@ -522,16 +575,17 @@ function historicalIncidentToIncident(h: HistoricalIncident): Incident {
     'Non-Adherence': 'moderate',
     'Other': 'minor',
   };
+  const incidentDate = normalizeASRSDate(h.date);
 
   return {
     id: h.id,
-    source: 'user_report' as Incident['source'], // ASRS data, closest source enum
+    source: 'asrs',
     title: h.primaryProblem
-      ? `${h.primaryProblem} — ${h.aircraftMakeModel || 'Unknown Aircraft'}`
+      ? `${h.primaryProblem} - ${h.aircraftMakeModel || 'Unknown Aircraft'}`
       : `ASRS Report ${h.acnNumber}`,
     description: h.narrative || h.synopsis || 'No narrative available.',
-    occurred_at: h.date || new Date().toISOString(),
-    reported_at: h.date || new Date().toISOString(),
+    occurred_at: incidentDate,
+    reported_at: incidentDate,
     location: h.localeReference || h.stateReference
       ? { region: [h.localeReference, h.stateReference].filter(Boolean).join(', ') }
       : undefined,
@@ -553,13 +607,24 @@ incidentsRouter.get('/', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0');
 
   try {
-    // Fetch ASRS incidents from HF Datasets
-    const asrsResult = await hfDatasetsClient.browseIncidents({
-      offset,
-      limit,
-      primaryProblem: c.req.query('problem') || undefined,
-      flightPhase: c.req.query('phase') || undefined,
-    });
+    await initializationPromise;
+
+    const datasetStatus = hfDatasetsClient.getStatus();
+    const shouldFetchASRS = source !== 'user_report';
+    const asrsFetchLimit = Math.max(
+      offset + limit,
+      datasetStatus.historicalIncidents.seedCount
+    );
+
+    // Fetch enough ASRS rows to paginate after merging and sorting with user reports.
+    const asrsResult = shouldFetchASRS
+      ? await hfDatasetsClient.browseIncidents({
+          offset: 0,
+          limit: asrsFetchLimit,
+          primaryProblem: c.req.query('problem') || undefined,
+          flightPhase: c.req.query('phase') || undefined,
+        })
+      : { incidents: [], total: 0, offset: 0, hasMore: false };
 
     const asrsIncidents = asrsResult.incidents.map(historicalIncidentToIncident);
 
@@ -571,11 +636,16 @@ incidentsRouter.get('/', async (c) => {
     if (source) filtered = filtered.filter(i => i.source === source);
 
     filtered.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+    const paginated = filtered.slice(offset, offset + limit);
 
     return c.json({
       success: true,
-      data: filtered.slice(0, limit),
-      meta: { total: asrsResult.total + userIncidentStore.length, offset, hasMore: asrsResult.hasMore },
+      data: paginated,
+      meta: {
+        total: asrsResult.total + userIncidentStore.length,
+        offset,
+        hasMore: asrsResult.hasMore || offset + limit < filtered.length,
+      },
     });
   } catch (error) {
     console.error('Error fetching incidents:', error);
@@ -590,6 +660,8 @@ incidentsRouter.get('/', async (c) => {
 
 // Get incident by ID
 incidentsRouter.get('/:id', async (c) => {
+  await initializationPromise;
+
   const id = c.req.param('id');
 
   // Check user-submitted first
@@ -614,6 +686,7 @@ incidentsRouter.get('/:id', async (c) => {
 incidentsRouter.post('/:id/briefing', async (c) => {
   try {
     const id = c.req.param('id');
+    await initializationPromise;
 
     // Find incident from either source
     let incident: Incident | undefined = userIncidentStore.find(i => i.id === id);
@@ -709,6 +782,7 @@ app.post('/api/query', async (c) => {
         break;
         
       case 'incident_search': {
+        await initializationPromise;
         const incidentResult = await hfDatasetsClient.browseIncidents({ limit: 5 });
         results = incidentResult.incidents.map(historicalIncidentToIncident);
         responseText = `Found ${incidentResult.total} incidents in ASRS database.`;
@@ -765,6 +839,8 @@ app.post('/api/query', async (c) => {
 
 app.get('/api/dashboard/stats', async (c) => {
   try {
+    await initializationPromise;
+
     // Get current counts
     const datasetStatus = hfDatasetsClient.getStatus();
     const { aircraft, anomalies } = await refreshGlobalAnomalies();
@@ -989,7 +1065,7 @@ app.route('/api/datasets', datasets);
 // Initialize HF Datasets Service
 // ============================================
 
-(async () => {
+const initializationPromise = (async () => {
   try {
     const [persistedIncidents, persistedAnomalies] = await Promise.all([
       loadPersistedIncidents(userIncidentStore),
@@ -1017,13 +1093,18 @@ const port = parseInt(env.PORT);
 // Capabilities Endpoint
 // ============================================
 
-app.get('/api/capabilities', (c) => {
+app.get('/api/capabilities', async (c) => {
+  await initializationPromise;
+
   const datasetStatus = hfDatasetsClient.getStatus();
+  const { aircraft } = await refreshGlobalAnomalies();
+  const flightsLive = aircraft.length > 0;
+
   return c.json({
     success: true,
     data: {
-      flights: { live: true, source: 'opensky' },
-      anomalies: { live: true, source: 'detection-engine' },
+      flights: { live: flightsLive, source: flightsLive ? 'opensky' : 'unavailable' },
+      anomalies: { live: flightsLive, source: flightsLive ? 'detection-engine' : 'unavailable' },
       incidents: { live: datasetStatus.historicalIncidents.loaded, source: datasetStatus.historicalIncidents.loaded ? 'asrs' : 'demo' },
       atc: { live: datasetStatus.atcTranscripts.available, source: datasetStatus.atcTranscripts.available ? 'archive' : 'demo' },
       ai_inference: { live: !isDemoMode, source: isDemoMode ? 'mock' : 'huggingface' },

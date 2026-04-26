@@ -57,15 +57,23 @@ export default function App() {
     enabled: liveTabs.has(activeTab),
     refetchInterval: 30000,
   });
-  const { data: capabilities } = useCapabilities();
+  const { data: capabilities, isError: capabilitiesError } = useCapabilities();
 
-  const aiLive = capabilities?.ai_inference?.live ?? false;
+  const aiLive = capabilities?.ai_inference?.live;
+  const showDemoBanner = aiLive === false;
+  const aiLabel = capabilitiesError
+    ? 'STATUS UNKNOWN'
+    : aiLive === undefined
+      ? 'CHECKING'
+      : aiLive
+        ? 'HUGGING FACE'
+        : 'DEMO MODE';
 
   const ActivePage = pages[activeTab];
 
   return (
     <div className="relative z-10 min-h-screen flex">
-      {!aiLive && (
+      {showDemoBanner && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-1.5 text-center text-[10px] font-mono text-yellow-500">
           ⚠️ DEMO MODE — AI features using simulated responses. Set HUGGINGFACE_API_KEY for live analysis.
         </div>
@@ -77,7 +85,7 @@ export default function App() {
         }}
       />
 
-      <div className={cn('flex-1 ml-[72px] flex flex-col min-h-screen', !aiLive && 'mt-8')}>
+      <div className={cn('flex-1 ml-[72px] flex flex-col min-h-screen', showDemoBanner && 'mt-8')}>
         <Header />
 
         <main className="flex-1 p-5 overflow-y-auto" key={activeTab}>
@@ -93,7 +101,7 @@ export default function App() {
               <span className="text-gray-800">|</span>
               <span>DATA: OPENSKY NETWORK</span>
               <span className="text-gray-800">|</span>
-              <span>AI: {aiLive ? 'HUGGING FACE' : 'DEMO MODE'}</span>
+              <span>AI: {aiLabel}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="w-3 h-3" />
