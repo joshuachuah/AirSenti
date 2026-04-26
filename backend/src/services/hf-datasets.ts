@@ -140,11 +140,15 @@ class HFDatasetsClient {
       this.loadMockAircraftMetadata();
     });
 
-    // Seed historical incidents
-    this.seedIncidents().catch(err => {
-      console.error('  Failed to seed historical incidents:', err.message);
+    try {
+      await this.seedIncidents();
+    } catch (err) {
+      console.error(
+        '  Failed to seed historical incidents:',
+        err instanceof Error ? err.message : String(err)
+      );
       this.loadMockIncidents();
-    });
+    }
 
     // Check ATC dataset availability
     this.checkATCAvailability().catch(err => {
@@ -443,6 +447,17 @@ class HFDatasetsClient {
       offset,
       hasMore: offset + limit < cached.length,
     };
+  }
+
+  getCachedIncidents(params: {
+    primaryProblem?: string;
+    flightPhase?: string;
+  } = {}): HistoricalIncident[] {
+    return Array.from(this.incidentCache.values()).filter(incident => {
+      if (params.primaryProblem && incident.primaryProblem !== params.primaryProblem) return false;
+      if (params.flightPhase && incident.flightPhase !== params.flightPhase) return false;
+      return true;
+    });
   }
 
   async getHistoricalIncident(id: string): Promise<HistoricalIncident | undefined> {
