@@ -201,7 +201,7 @@ export interface TranscriptSegment {
 // Incident & Report Types
 export interface Incident {
   id: string;
-  source: 'faa' | 'ntsb' | 'news' | 'social' | 'user_report';
+  source: 'faa' | 'ntsb' | 'news' | 'social' | 'user_report' | 'asrs';
   source_url?: string;
   title: string;
   description: string;
