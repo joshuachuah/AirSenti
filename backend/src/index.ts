@@ -415,8 +415,7 @@ atc.get('/live', async (c) => {
     await initializationPromise;
 
     const result = await hfDatasetsClient.getATCTranscripts(0, limit);
-    const transmissions = result.entries.map((entry, i) => ({
-      timestamp: new Date(Date.now() - (i + 1) * 15000).toISOString(),
+    const transmissions = result.entries.map((entry) => ({
       speaker: 'unknown' as const,
       text: entry.text,
     }));

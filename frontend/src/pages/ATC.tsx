@@ -1,4 +1,4 @@
-import { Volume2, Archive, Radio } from 'lucide-react';
+import { Volume2, Archive, Radio, AlertTriangle } from 'lucide-react';
 import { ATCFeed } from '../components/ATCFeed';
 import { useLiveATC } from '../api/hooks';
 import { cn } from '../utils';
@@ -8,6 +8,13 @@ export function ATC() {
 
   const isLive = data?.is_live ?? false;
   const source = data?.source ?? 'unavailable';
+  const statusLabel = isLive
+    ? 'LIVE'
+    : source === 'archive'
+      ? 'ARCHIVE'
+      : source === 'demo'
+        ? 'DEMO'
+        : 'UNAVAILABLE';
 
   return (
     <div className="space-y-5">
@@ -27,6 +34,11 @@ export function ATC() {
               <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-yellow-500/20 text-yellow-500">
                 DEMO DATA
               </span>
+            ) : source === 'unavailable' ? (
+              <span className="flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-1 rounded bg-gray-500/20 text-gray-500">
+                <AlertTriangle className="w-3 h-3" />
+                UNAVAILABLE
+              </span>
             ) : null}
           </h2>
           <div className="flex items-center gap-2">
@@ -35,7 +47,7 @@ export function ATC() {
               isLive ? 'bg-green-500 status-blink' : 'bg-gray-600'
             )} />
             <span className="text-xs font-mono text-gray-500">
-              {isLive ? 'LIVE' : 'ARCHIVE'}
+              {statusLabel}
             </span>
           </div>
         </div>

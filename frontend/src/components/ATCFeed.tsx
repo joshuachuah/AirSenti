@@ -15,10 +15,15 @@ export function ATCFeed() {
   }
 
   const transmissions = data?.recent_transmissions || [];
+  const timestampFallback = data?.source === 'demo'
+    ? 'DEMO'
+    : data?.source === 'archive'
+      ? 'ARCHIVE'
+      : 'NO TIME';
 
   return (
     <div className="space-y-2">
-      {transmissions.map((tx: any, i: number) => (
+      {transmissions.map((tx, i) => (
         <div
           key={i}
           className="p-3 rounded-lg bg-void-850/60 border border-hud-border hover:border-hud-border-active transition-colors"
@@ -29,12 +34,16 @@ export function ATCFeed() {
                 'badge text-[10px] py-0.5 px-2',
                 tx.speaker === 'atc'
                   ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                  : 'bg-green-500/10 text-green-400 border-green-500/20',
+                  : tx.speaker === 'pilot'
+                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                    : 'bg-gray-500/10 text-gray-400 border-gray-500/20',
               )}
             >
               {tx.speaker.toUpperCase()}
             </span>
-            <span className="text-[10px] font-mono text-gray-600">{formatTime(tx.timestamp)}</span>
+            <span className="text-[10px] font-mono text-gray-600">
+              {tx.timestamp ? formatTime(tx.timestamp) : timestampFallback}
+            </span>
           </div>
           <p className="text-sm text-gray-300 font-mono leading-relaxed">{tx.text}</p>
         </div>

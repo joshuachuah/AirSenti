@@ -66,7 +66,7 @@ export interface LiveATCResponse {
   source: 'archive' | 'demo' | 'unavailable';
   total_available: number;
   recent_transmissions: Array<{
-    timestamp: string;
+    timestamp?: string;
     speaker: 'pilot' | 'atc' | 'unknown';
     text: string;
   }>;

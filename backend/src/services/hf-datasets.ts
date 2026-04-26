@@ -150,10 +150,7 @@ class HFDatasetsClient {
       this.loadMockIncidents();
     }
 
-    // Check ATC dataset availability
-    this.checkATCAvailability().catch(err => {
-      console.error('  ATC dataset unavailable:', err.message);
-    });
+    await this.checkATCAvailability();
 
     // Schedule periodic aircraft DB refresh
     this.scheduleRefresh();
@@ -571,6 +568,9 @@ class HFDatasetsClient {
   // ==========================================
 
   async checkATCAvailability(): Promise<void> {
+    this.atcAvailable = false;
+    this.atcTotalEntries = 0;
+
     try {
       const url = `${HF_DATASETS_API}/size?dataset=${ATC_DATASET}`;
       const response = await rateLimitedFetch(url);
@@ -582,7 +582,9 @@ class HFDatasetsClient {
         this.atcAvailable = true;
         this.atcTotalEntries = data.size?.dataset?.num_rows || 0;
         console.log(`  ATC dataset available: ${this.atcTotalEntries.toLocaleString()} entries`);
+        return;
       }
+      console.error(`  ATC dataset unavailable: ${response.status}`);
     } catch {
       this.atcAvailable = false;
     }

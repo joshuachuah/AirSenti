@@ -73,6 +73,7 @@ describe('API response shapes', () => {
     expect(json.data.source).toBe('demo');
     expect(json.data.total_available).toBeGreaterThan(0);
     expect(json.data.recent_transmissions).toHaveLength(2);
+    expect(json.data.recent_transmissions[0]).not.toHaveProperty('timestamp');
   });
 });
 
