@@ -29,6 +29,21 @@ describe('API response shapes', () => {
     expect(json.success).toBe(true);
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.data[0]).toHaveProperty('title');
+    expect(json.data[0].source).toBe('asrs');
+    expect(json.data[0].occurred_at).toBe('2018-10-01T00:00:00.000Z');
+  });
+
+  it('paginates incidents after ASRS date normalization and sorting', async () => {
+    const firstPage = await app.fetch(new Request('http://localhost/api/incidents?limit=1&offset=0'));
+    const secondPage = await app.fetch(new Request('http://localhost/api/incidents?limit=1&offset=1'));
+
+    const firstJson = await firstPage.json();
+    const secondJson = await secondPage.json();
+
+    expect(firstJson.data[0].id).toBe('asrs-2');
+    expect(secondJson.data[0].id).toBe('asrs-1');
+    expect(firstJson.meta).toMatchObject({ total: 3, offset: 0, hasMore: true });
+    expect(secondJson.meta).toMatchObject({ total: 3, offset: 1, hasMore: true });
   });
 
   it('returns a structured natural-query payload in demo mode', async () => {

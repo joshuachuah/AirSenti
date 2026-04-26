@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, FileText, Plus, Send } from 'lucide-react';
+import { AlertTriangle, FileText, Plus, Send, Database } from 'lucide-react';
 import { IncidentCard } from '../components/IncidentCard';
-import { useCreateIncident, useIncidents, type Incident as IncidentType } from '../api/hooks';
+import { useCreateIncident, useIncidents, useDatasetStatus, type Incident as IncidentType } from '../api/hooks';
 
 type IncidentDraft = {
   title: string;
@@ -25,6 +25,7 @@ const initialDraft: IncidentDraft = {
 
 export function Incidents() {
   const { data: incidents, isLoading } = useIncidents({ limit: 20 });
+  const { data: datasetStatus } = useDatasetStatus();
   const createIncident = useCreateIncident();
   const [showReporter, setShowReporter] = useState(false);
   const [draft, setDraft] = useState<IncidentDraft>(initialDraft);
@@ -41,6 +42,16 @@ export function Incidents() {
           <h2 className="font-display font-bold text-base text-gray-200 tracking-wide">
             AVIATION INCIDENTS
           </h2>
+          {datasetStatus?.historicalIncidents?.loaded ? (
+            <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
+              <Database className="w-3 h-3" />
+              ASRS DATABASE
+            </span>
+          ) : (
+            <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-yellow-500/20 text-yellow-500">
+              DEMO DATA
+            </span>
+          )}
           <button
             className="btn-primary text-xs py-2 flex items-center gap-2"
             onClick={() => setShowReporter(true)}
