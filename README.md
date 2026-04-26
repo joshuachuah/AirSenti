@@ -287,9 +287,7 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ## 📞 Support
 
-- 📧 Email: support@airsentinel.ai
-- 💬 Discord: [Join our server](https://discord.gg/airsentinel)
-- 🐦 Twitter: [@AirSentinelAI](https://twitter.com/airsentinelai)
+- 📧 Email: jchuah07@gmail.com
 
 ---
 
