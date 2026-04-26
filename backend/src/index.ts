@@ -609,24 +609,15 @@ incidentsRouter.get('/', async (c) => {
   try {
     await initializationPromise;
 
-    const datasetStatus = hfDatasetsClient.getStatus();
     const shouldFetchASRS = source !== 'user_report';
-    const asrsFetchLimit = Math.max(
-      offset + limit,
-      datasetStatus.historicalIncidents.seedCount
-    );
+    const primaryProblem = c.req.query('problem') || undefined;
+    const flightPhase = c.req.query('phase') || undefined;
 
-    // Fetch enough ASRS rows to paginate after merging and sorting with user reports.
-    const asrsResult = shouldFetchASRS
-      ? await hfDatasetsClient.browseIncidents({
-          offset: 0,
-          limit: asrsFetchLimit,
-          primaryProblem: c.req.query('problem') || undefined,
-          flightPhase: c.req.query('phase') || undefined,
-        })
-      : { incidents: [], total: 0, offset: 0, hasMore: false };
-
-    const asrsIncidents = asrsResult.incidents.map(historicalIncidentToIncident);
+    const asrsIncidents = shouldFetchASRS
+      ? hfDatasetsClient
+          .getCachedIncidents({ primaryProblem, flightPhase })
+          .map(historicalIncidentToIncident)
+      : [];
 
     // Merge with user-submitted incidents
     const allIncidents = [...asrsIncidents, ...userIncidentStore];
@@ -642,9 +633,9 @@ incidentsRouter.get('/', async (c) => {
       success: true,
       data: paginated,
       meta: {
-        total: asrsResult.total + userIncidentStore.length,
+        total: filtered.length,
         offset,
-        hasMore: asrsResult.hasMore || offset + limit < filtered.length,
+        hasMore: offset + limit < filtered.length,
       },
     });
   } catch (error) {

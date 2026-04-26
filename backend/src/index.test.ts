@@ -42,6 +42,8 @@ describe('API response shapes', () => {
 
     expect(firstJson.data[0].id).toBe('asrs-2');
     expect(secondJson.data[0].id).toBe('asrs-1');
+    expect(firstJson.meta).toMatchObject({ total: 3, offset: 0, hasMore: true });
+    expect(secondJson.meta).toMatchObject({ total: 3, offset: 1, hasMore: true });
   });
 
   it('returns a structured natural-query payload in demo mode', async () => {
