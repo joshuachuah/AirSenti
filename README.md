@@ -15,7 +15,7 @@ Last updated: April 26, 2026.
 | Incidents | ASRS archive plus user reports | Main now serves ASRS historical incident data through the Hugging Face datasets client and keeps user-submitted reports separate. |
 | Dashboard source badges | Implemented | Dashboard stats expose `live`, `unavailable`, `asrs`, `archive`, and `demo` source states. |
 | AI inference | Live with `HUGGINGFACE_API_KEY`, demo without it | The app shows demo-mode indicators when AI responses are mocked. |
-| ATC feed | Open PR | PR #3 replaces hardcoded ATC messages with archive/demo-aware transcript data and removes fake "live" labeling. Until PR #3 is merged, `main` may still differ from that ATC behavior. |
+| ATC feed | Archive/demo-aware and deployed | Hardcoded ATC messages were replaced with Hugging Face dataset transcripts or clearly labeled demo/unavailable states. The UI no longer presents archive data as live ATC. |
 | Persistence | Local JSON-backed stores | User incidents and anomalies are persisted under backend data storage. Postgres/Redis are present for future production work but are not the primary data layer yet. |
 
 ## What Works Today
@@ -29,12 +29,12 @@ Last updated: April 26, 2026.
 - Hugging Face dataset integration for aircraft metadata, ASRS incidents, and ATC dataset access.
 - Hugging Face inference integration with demo-mode fallback.
 - Source badges and capability endpoints so the UI does not present demo/archive data as live.
-- Backend regression tests for API response shape, ASRS incident behavior, anomaly detection, and persistence. PR #3 adds ATC payload metadata coverage.
+- Backend regression tests for API response shape, ASRS incident behavior, ATC payload metadata, anomaly detection, and persistence.
 
 ## Important Limitations
 
 - This is not a certified aviation safety system.
-- Live ATC streaming is not integrated yet. ATC transcript work is archive/demo-oriented unless PR #3 has been merged and deployed.
+- Live ATC streaming is not integrated yet. The current ATC feed is archive/demo-aware and labels non-live data explicitly.
 - AI output is advisory only and can be mocked in demo mode.
 - OpenSky availability and rate limits affect live flight/anomaly data.
 - Docker support exists, but day-to-day local development currently uses Bun directly.
@@ -168,7 +168,7 @@ cd frontend
 bun run build
 ```
 
-Recent verification from PR #3 work:
+Recent verification from the ATC archive-data update:
 
 - Backend tests passed: 8 tests.
 - Frontend production build passed.
@@ -190,7 +190,7 @@ Recent verification from PR #3 work:
 | `/api/incidents/:id/briefing` | POST | AI/demo incident briefing. |
 | `/api/incidents` | POST | Create a user-submitted incident. |
 | `/api/atc/transcribe` | POST | Transcribe uploaded ATC audio. |
-| `/api/atc/live` | GET | ATC feed endpoint. See current branch/PR status for live vs archive behavior. |
+| `/api/atc/live` | GET | Archive/demo-aware ATC transcript feed with `is_live`, `source`, and `total_available` metadata. |
 | `/api/query` | POST | Natural language query endpoint. |
 | `/api/images/analyze` | POST | Analyze uploaded image. |
 | `/api/images/analyze-url` | POST | Analyze image by URL. |
@@ -211,9 +211,8 @@ Use direct Bun development first if you are actively changing code. Docker is be
 
 Near-term:
 
-- Merge PR #3 so ATC no longer presents hardcoded messages as live communications.
 - Add end-to-end smoke tests around source badges and demo/archive/live states.
-- Improve README/API docs after PR #3 lands on `main`.
+- Keep README/API docs aligned whenever source-status behavior changes.
 - Add clearer local setup scripts for starting frontend and backend together.
 
 Later:
