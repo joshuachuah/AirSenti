@@ -62,6 +62,19 @@ describe('API response shapes', () => {
     expect(json.data).toHaveProperty('response');
     expect(Array.isArray(json.data.suggested_followups)).toBe(true);
   });
+
+  it('returns archive-aware ATC payload metadata', async () => {
+    const response = await app.fetch(new Request('http://localhost/api/atc/live?limit=2'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.is_live).toBe(false);
+    expect(json.data.source).toBe('demo');
+    expect(json.data.total_available).toBeGreaterThan(0);
+    expect(json.data.recent_transmissions).toHaveLength(2);
+    expect(json.data.recent_transmissions[0]).not.toHaveProperty('timestamp');
+  });
 });
 
 
