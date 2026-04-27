@@ -10,11 +10,13 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - APP_ENV=production
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-http://localhost:5173}
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - OPENSKY_USERNAME=${OPENSKY_USERNAME}
       - OPENSKY_PASSWORD=${OPENSKY_PASSWORD}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -10,6 +10,9 @@ beforeAll(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'airsentinel-api-'));
   process.env.AIRSENTINEL_DATA_DIR = testDir;
   process.env.ENABLE_HF_DATASETS = 'false';
+  process.env.FRONTEND_ORIGIN = 'http://localhost:5173';
+  process.env.RATE_LIMIT_MAX = '2';
+  process.env.RATE_LIMIT_WINDOW_MS = '60000';
   delete process.env.HUGGINGFACE_API_KEY;
   app = await import('./index').then((module) => module.default);
 });
@@ -17,10 +20,49 @@ beforeAll(async () => {
 afterAll(async () => {
   delete process.env.AIRSENTINEL_DATA_DIR;
   delete process.env.ENABLE_HF_DATASETS;
+  delete process.env.FRONTEND_ORIGIN;
+  delete process.env.RATE_LIMIT_MAX;
+  delete process.env.RATE_LIMIT_WINDOW_MS;
   await rm(testDir, { recursive: true, force: true });
 });
 
 describe('API response shapes', () => {
+  it('returns health metadata without dependency readiness checks', async () => {
+    const response = await app.fetch(new Request('http://localhost/health'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.name).toBe('AirSentinel AI API');
+    expect(json.data.mode).toBe('demo');
+    expect(json.data).toHaveProperty('uptime_seconds');
+  });
+
+  it('returns structured readiness data', async () => {
+    const response = await app.fetch(new Request('http://localhost/ready'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.ready).toBe(true);
+    expect(json.data.dependencies).toHaveProperty('persistence');
+    expect(json.data.dependencies).toHaveProperty('huggingface_datasets');
+    expect(json.data.dependencies).toHaveProperty('opensky');
+    expect(json.data.dependencies).toHaveProperty('ai');
+  });
+
+  it('allows the configured CORS origin and rejects arbitrary origins', async () => {
+    const allowed = await app.fetch(new Request('http://localhost/health', {
+      headers: { Origin: 'http://localhost:5173' },
+    }));
+    const rejected = await app.fetch(new Request('http://localhost/health', {
+      headers: { Origin: 'https://example.com' },
+    }));
+
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
+    expect(rejected.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
   it('returns a successful incidents payload', async () => {
     const response = await app.fetch(new Request('http://localhost/api/incidents'));
     const json = await response.json();
@@ -74,6 +116,57 @@ describe('API response shapes', () => {
     expect(json.data.total_available).toBeGreaterThan(0);
     expect(json.data.recent_transmissions).toHaveLength(2);
     expect(json.data.recent_transmissions[0]).not.toHaveProperty('timestamp');
+  });
+
+  it('blocks public incident submissions by default', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/api/incidents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Test report',
+          description: 'This should not be publicly writable by default.',
+        }),
+      })
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('PUBLIC_WRITES_DISABLED');
+  });
+
+  it('returns validation errors for invalid route inputs', async () => {
+    const response = await app.fetch(new Request('http://localhost/api/flights/area?min_lat=bad'));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('INVALID_PARAMS');
+  });
+
+  it('rate limits expensive POST routes', async () => {
+    const requestBody = JSON.stringify({ texts: ['one'] });
+    const makeRequest = () => app.fetch(
+      new Request('http://localhost/api/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '203.0.113.10',
+        },
+        body: requestBody,
+      })
+    );
+
+    expect((await makeRequest()).status).toBe(200);
+    expect((await makeRequest()).status).toBe(200);
+
+    const limited = await makeRequest();
+    const json = await limited.json();
+
+    expect(limited.status).toBe(429);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('RATE_LIMITED');
   });
 });
 

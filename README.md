@@ -113,6 +113,11 @@ Create or update `backend/.env`:
 ```env
 PORT=3000
 NODE_ENV=development
+APP_ENV=development
+FRONTEND_ORIGIN=http://localhost:5173
+
+# Public writes are disabled by default for the V1 public demo posture.
+ENABLE_PUBLIC_WRITES=false
 
 # Optional. Without this, AI features run in demo mode.
 HUGGINGFACE_API_KEY=
@@ -128,6 +133,11 @@ ENABLE_HF_DATASETS=true
 HF_INCIDENT_SEED_COUNT=200
 HF_DATASETS_RATE_LIMIT_MS=500
 OPENSKY_RATE_LIMIT_MS=10000
+
+# Backend readiness guardrails.
+MAX_UPLOAD_BYTES=10485760
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=60
 ```
 
 ### Run
@@ -177,6 +187,8 @@ Recent verification from the ATC archive-data update:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
+| `/health` | GET | Lightweight process health check for uptime/load balancers. |
+| `/ready` | GET | Dependency readiness snapshot for persistence, datasets, OpenSky capability, and AI mode. |
 | `/api/flights` | GET | Current tracked aircraft and related anomalies. |
 | `/api/flights/area` | GET | Aircraft inside a bounding box. |
 | `/api/flights/radius` | GET | Aircraft near a point. |
@@ -201,11 +213,14 @@ Recent verification from the ATC archive-data update:
 
 The repository includes `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile`.
 
-```bash
+```powershell
+$env:FRONTEND_ORIGIN = 'http://localhost:5173'
 docker compose up --build
 ```
 
 Use direct Bun development first if you are actively changing code. Docker is better for a production-like smoke test.
+
+For production, set `APP_ENV=production`, `NODE_ENV=production`, and an explicit `FRONTEND_ORIGIN` matching the deployed frontend origin. The backend rejects production startup without `FRONTEND_ORIGIN`.
 
 ## Roadmap
 

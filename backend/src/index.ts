@@ -2,10 +2,11 @@
 // AirSentinel AI - Main API Server
 // ============================================
 
-import { Hono } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
+import { z } from 'zod';
 import { env, isDemoMode } from './config/env';
 import { openSkyClient } from './services/opensky';
 import { detectAnomalies, detectAnomaliesBatch, getAnomalyStats } from './services/anomaly-detection';
@@ -31,6 +32,191 @@ import type {
   GeoCircle,
 } from '../../shared/types';
 
+const APP_NAME = 'AirSentinel AI API';
+const APP_VERSION = '1.0.0';
+const startedAt = Date.now();
+const MAX_PUBLIC_LIMIT = 100;
+
+type ErrorStatus = 400 | 403 | 404 | 413 | 429 | 500 | 503;
+
+function apiError(c: Context, status: ErrorStatus, code: string, message: string, details?: unknown) {
+  return c.json({
+    success: false,
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details }),
+    },
+  }, status);
+}
+
+function parseIntegerParam(
+  c: Context,
+  name: string,
+  defaultValue: number,
+  options: { min?: number; max?: number } = {}
+): { value: number } | { response: Response } {
+  const raw = c.req.query(name);
+  const value = raw === undefined ? defaultValue : Number(raw);
+  const min = options.min ?? Number.MIN_SAFE_INTEGER;
+  const max = options.max ?? Number.MAX_SAFE_INTEGER;
+
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return {
+      response: apiError(
+        c,
+        400,
+        'INVALID_PARAMS',
+        `${name} must be an integer between ${min} and ${max}`
+      ),
+    };
+  }
+
+  return { value };
+}
+
+function parseNumberParam(
+  c: Context,
+  name: string,
+  options: { min?: number; max?: number; required?: boolean } = {}
+): { value: number } | { response: Response } {
+  const raw = c.req.query(name);
+  if (raw === undefined || raw === '') {
+    if (options.required) {
+      return { response: apiError(c, 400, 'INVALID_PARAMS', `${name} is required`) };
+    }
+    return { value: 0 };
+  }
+
+  const value = Number(raw);
+  const min = options.min ?? -Infinity;
+  const max = options.max ?? Infinity;
+
+  if (!Number.isFinite(value) || value < min || value > max) {
+    return {
+      response: apiError(c, 400, 'INVALID_PARAMS', `${name} must be a number between ${min} and ${max}`),
+    };
+  }
+
+  return { value };
+}
+
+async function parseJsonBody<T>(c: Context, schema: z.ZodSchema<T>): Promise<
+  { data: T } | { response: Response }
+> {
+  try {
+    const body = await c.req.json();
+    const parsed = schema.safeParse(body);
+
+    if (!parsed.success) {
+      return {
+        response: apiError(c, 400, 'INVALID_INPUT', 'Invalid request body', parsed.error.flatten()),
+      };
+    }
+
+    return { data: parsed.data };
+  } catch {
+    return { response: apiError(c, 400, 'INVALID_JSON', 'Request body must be valid JSON') };
+  }
+}
+
+function getClientIp(c: Context): string {
+  return (
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+    c.req.header('x-real-ip') ||
+    'unknown'
+  );
+}
+
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimit() {
+  return async (c: Context, next: Next) => {
+    const now = Date.now();
+    const routeKey = `${c.req.method}:${new URL(c.req.url).pathname}`;
+    const key = `${getClientIp(c)}:${routeKey}`;
+    const current = rateLimitStore.get(key);
+
+    if (!current || now >= current.resetAt) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + env.RATE_LIMIT_WINDOW_MS });
+      await next();
+      return;
+    }
+
+    if (current.count >= env.RATE_LIMIT_MAX) {
+      c.header('Retry-After', Math.ceil((current.resetAt - now) / 1000).toString());
+      return apiError(c, 429, 'RATE_LIMITED', 'Too many requests. Please try again later.');
+    }
+
+    current.count += 1;
+    await next();
+  };
+}
+
+function validateUpload(c: Context, file: File | undefined, label: string): { file: File } | { response: Response } {
+  if (!file) {
+    return { response: apiError(c, 400, 'MISSING_FILE', `No ${label} file provided`) };
+  }
+
+  if (file.size > env.MAX_UPLOAD_BYTES) {
+    return {
+      response: apiError(
+        c,
+        413,
+        'UPLOAD_TOO_LARGE',
+        `${label} file exceeds the configured upload size limit`
+      ),
+    };
+  }
+
+  return { file };
+}
+
+const imageUrlSchema = z.object({
+  url: z.string().url(),
+  type: z.enum(['satellite', 'airport', 'aircraft', 'incident']).default('airport'),
+  questions: z.array(z.string().min(1).max(500)).max(10).optional(),
+});
+
+const naturalQuerySchema = z.object({
+  query: z.string().trim().min(1).max(1000),
+  context: z.unknown().optional(),
+});
+
+const embeddingsSchema = z.object({
+  texts: z.array(z.string().trim().min(1).max(2000)).min(1).max(25),
+});
+
+const createIncidentSchema = z.object({
+  source: z.enum(['faa', 'ntsb', 'news', 'social', 'user_report', 'asrs']).default('user_report'),
+  source_url: z.string().url().optional(),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(5000),
+  occurred_at: z.string().datetime().optional(),
+  location: z.object({
+    airport_icao: z.string().min(3).max(4).optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    region: z.string().max(200).optional(),
+  }).optional(),
+  aircraft_involved: z.array(z.object({
+    registration: z.string().max(20).optional(),
+    type: z.string().max(100).optional(),
+    operator: z.string().max(100).optional(),
+    callsign: z.string().max(20).optional(),
+  })).max(20).optional(),
+  severity: z.enum(['minor', 'moderate', 'serious', 'fatal']).default('moderate'),
+  categories: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
+});
+
+const readiness = {
+  initializationComplete: false,
+  coreInitializationFailed: false,
+  persistence: 'starting' as 'starting' | 'ready' | 'failed',
+  datasets: 'starting' as 'starting' | 'ready' | 'degraded' | 'failed',
+  error: null as string | null,
+};
+
 // Initialize Hono app
 const app = new Hono();
 
@@ -38,7 +224,7 @@ const app = new Hono();
 app.use('*', logger());
 app.use('*', prettyJSON());
 app.use('*', cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', '*'],
+  origin: (origin) => origin === env.FRONTEND_ORIGIN ? origin : undefined,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -46,12 +232,62 @@ app.use('*', cors({
 // Health check
 app.get('/', (c) => {
   return c.json({
-    name: 'AirSentinel AI API',
-    version: '1.0.0',
+    name: APP_NAME,
+    version: APP_VERSION,
     status: 'operational',
     mode: isDemoMode ? 'demo' : 'production',
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get('/health', (c) => {
+  return c.json({
+    success: true,
+    data: {
+      name: APP_NAME,
+      version: APP_VERSION,
+      environment: env.APP_ENV,
+      mode: isDemoMode ? 'demo' : 'production',
+      uptime_seconds: Math.floor((Date.now() - startedAt) / 1000),
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
+app.get('/ready', async (c) => {
+  await initializationPromise;
+
+  const datasetStatus = hfDatasetsClient.getStatus();
+  const readyStatus = {
+    name: APP_NAME,
+    version: APP_VERSION,
+    ready: !readiness.coreInitializationFailed,
+    initialized: readiness.initializationComplete,
+    timestamp: new Date().toISOString(),
+    dependencies: {
+      persistence: { status: readiness.persistence },
+      huggingface_datasets: {
+        status: readiness.datasets,
+        aircraft_metadata_loaded: datasetStatus.aircraftMetadata.loaded,
+        historical_incidents_loaded: datasetStatus.historicalIncidents.loaded,
+        atc_transcripts_available: datasetStatus.atcTranscripts.available,
+      },
+      opensky: {
+        status: env.ENABLE_LIVE_TRACKING ? 'configured' : 'disabled',
+        authenticated: Boolean(
+          (env.OPENSKY_CLIENT_ID && env.OPENSKY_CLIENT_SECRET) ||
+          (env.OPENSKY_USERNAME && env.OPENSKY_PASSWORD)
+        ),
+      },
+      ai: {
+        status: isDemoMode ? 'demo' : 'live',
+        provider: isDemoMode ? 'mock' : 'huggingface',
+      },
+    },
+    error: readiness.error,
+  };
+
+  return c.json({ success: true, data: readyStatus }, readyStatus.ready ? 200 : 503);
 });
 
 // ============================================
@@ -63,7 +299,9 @@ const flights = new Hono();
 // Get all tracked flights
 flights.get('/', async (c) => {
   try {
-    const limit = parseInt(c.req.query('limit') || '100');
+    const parsedLimit = parseIntegerParam(c, 'limit', 100, { min: 1, max: MAX_PUBLIC_LIMIT });
+    if ('response' in parsedLimit) return parsedLimit.response;
+    const limit = parsedLimit.value;
     const aircraft = await openSkyClient.getAllStates();
     const { anomalies: allAnomalies } = await refreshGlobalAnomalies(aircraft);
     
@@ -104,19 +342,22 @@ flights.get('/', async (c) => {
 // Get flights in bounding box
 flights.get('/area', async (c) => {
   try {
-    const minLat = parseFloat(c.req.query('min_lat') || '0');
-    const maxLat = parseFloat(c.req.query('max_lat') || '0');
-    const minLon = parseFloat(c.req.query('min_lon') || '0');
-    const maxLon = parseFloat(c.req.query('max_lon') || '0');
-    
-    if (!minLat || !maxLat || !minLon || !maxLon) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_PARAMS',
-          message: 'Missing required bounding box parameters',
-        },
-      }, 400);
+    const parsedMinLat = parseNumberParam(c, 'min_lat', { min: -90, max: 90, required: true });
+    const parsedMaxLat = parseNumberParam(c, 'max_lat', { min: -90, max: 90, required: true });
+    const parsedMinLon = parseNumberParam(c, 'min_lon', { min: -180, max: 180, required: true });
+    const parsedMaxLon = parseNumberParam(c, 'max_lon', { min: -180, max: 180, required: true });
+    if ('response' in parsedMinLat) return parsedMinLat.response;
+    if ('response' in parsedMaxLat) return parsedMaxLat.response;
+    if ('response' in parsedMinLon) return parsedMinLon.response;
+    if ('response' in parsedMaxLon) return parsedMaxLon.response;
+
+    const minLat = parsedMinLat.value;
+    const maxLat = parsedMaxLat.value;
+    const minLon = parsedMinLon.value;
+    const maxLon = parsedMaxLon.value;
+
+    if (maxLat <= minLat || maxLon <= minLon) {
+      return apiError(c, 400, 'INVALID_PARAMS', 'Bounding box max values must be greater than min values');
     }
     
     const bbox: BoundingBox = { min_lat: minLat, max_lat: maxLat, min_lon: minLon, max_lon: maxLon };
@@ -141,16 +382,16 @@ flights.get('/area', async (c) => {
 // Get flights within radius
 flights.get('/radius', async (c) => {
   try {
-    const lat = parseFloat(c.req.query('lat') || '0');
-    const lon = parseFloat(c.req.query('lon') || '0');
-    const radiusNm = parseFloat(c.req.query('radius_nm') || '50');
-    
-    if (!lat || !lon) {
-      return c.json({
-        success: false,
-        error: { code: 'INVALID_PARAMS', message: 'Missing lat/lon parameters' },
-      }, 400);
-    }
+    const parsedLat = parseNumberParam(c, 'lat', { min: -90, max: 90, required: true });
+    const parsedLon = parseNumberParam(c, 'lon', { min: -180, max: 180, required: true });
+    const parsedRadius = parseNumberParam(c, 'radius_nm', { min: 1, max: 500 });
+    if ('response' in parsedLat) return parsedLat.response;
+    if ('response' in parsedLon) return parsedLon.response;
+    if ('response' in parsedRadius) return parsedRadius.response;
+
+    const lat = parsedLat.value;
+    const lon = parsedLon.value;
+    const radiusNm = c.req.query('radius_nm') === undefined ? 50 : parsedRadius.value;
     
     const circle: GeoCircle = { latitude: lat, longitude: lon, radius_nm: radiusNm };
     const aircraft = await openSkyClient.getStatesByRadius(circle);
@@ -293,7 +534,9 @@ anomaliesRouter.get('/', async (c) => {
 
   const severity = c.req.query('severity');
   const type = c.req.query('type');
-  const limit = parseInt(c.req.query('limit') || '50');
+  const parsedLimit = parseIntegerParam(c, 'limit', 50, { min: 1, max: MAX_PUBLIC_LIMIT });
+  if ('response' in parsedLimit) return parsedLimit.response;
+  const limit = parsedLimit.value;
   
   let filtered = [...anomalyStore];
   
@@ -338,7 +581,7 @@ anomaliesRouter.get('/:id', async (c) => {
 });
 
 // Analyze anomaly with AI
-anomaliesRouter.post('/:id/analyze', async (c) => {
+anomaliesRouter.post('/:id/analyze', rateLimit(), async (c) => {
   const id = c.req.param('id');
   let anomaly = anomalyStore.find(a => a.id === id);
 
@@ -371,19 +614,13 @@ app.route('/api/anomalies', anomaliesRouter);
 const atc = new Hono();
 
 // Process ATC audio file
-atc.post('/transcribe', async (c) => {
+atc.post('/transcribe', rateLimit(), async (c) => {
   try {
     const body = await c.req.parseBody();
-    const audioFile = body['audio'] as File;
+    const upload = validateUpload(c, body['audio'] as File | undefined, 'audio');
+    if ('response' in upload) return upload.response;
     
-    if (!audioFile) {
-      return c.json({
-        success: false,
-        error: { code: 'MISSING_FILE', message: 'No audio file provided' },
-      }, 400);
-    }
-    
-    const arrayBuffer = await audioFile.arrayBuffer();
+    const arrayBuffer = await upload.file.arrayBuffer();
     const result = await transcribeATCAudio(arrayBuffer);
     
     return c.json({
@@ -409,7 +646,9 @@ atc.post('/transcribe', async (c) => {
 // Get ATC transcript feed (from archive when live audio unavailable)
 atc.get('/live', async (c) => {
   const frequency = c.req.query('frequency') || '118.100';
-  const limit = parseInt(c.req.query('limit') || '10');
+  const parsedLimit = parseIntegerParam(c, 'limit', 10, { min: 1, max: MAX_PUBLIC_LIMIT });
+  if ('response' in parsedLimit) return parsedLimit.response;
+  const limit = parsedLimit.value;
 
   try {
     await initializationPromise;
@@ -463,24 +702,45 @@ app.route('/api/atc', atc);
 const images = new Hono();
 
 // Analyze uploaded image
-images.post('/analyze', async (c) => {
+images.post('/analyze', rateLimit(), async (c) => {
   try {
     const body = await c.req.parseBody();
-    const imageFile = body['image'] as File;
-    const analysisType = (body['type'] as string) || 'airport';
+    const upload = validateUpload(c, body['image'] as File | undefined, 'image');
+    if ('response' in upload) return upload.response;
+
+    const parsedAnalysisType = z
+      .enum(['satellite', 'airport', 'aircraft', 'incident'])
+      .safeParse(body['type'] || 'airport');
+    if (!parsedAnalysisType.success) {
+      return apiError(c, 400, 'INVALID_INPUT', 'type must be satellite, airport, aircraft, or incident');
+    }
+    const analysisType = parsedAnalysisType.data;
     const questionsRaw = body['questions'] as string;
-    const questions = questionsRaw ? JSON.parse(questionsRaw) : undefined;
-    
-    if (!imageFile) {
-      return c.json({
-        success: false,
-        error: { code: 'MISSING_FILE', message: 'No image file provided' },
-      }, 400);
+    let questions: string[] | undefined;
+
+    if (questionsRaw) {
+      let parsedRawQuestions: unknown;
+      try {
+        parsedRawQuestions = JSON.parse(questionsRaw);
+      } catch {
+        return apiError(c, 400, 'INVALID_INPUT', 'questions must be valid JSON');
+      }
+
+      const parsedQuestions = z
+        .array(z.string().min(1).max(500))
+        .max(10)
+        .safeParse(parsedRawQuestions);
+
+      if (!parsedQuestions.success) {
+        return apiError(c, 400, 'INVALID_INPUT', 'questions must be an array of strings');
+      }
+
+      questions = parsedQuestions.data;
     }
     
     const result = await analyzeImage(
-      imageFile,
-      analysisType as any,
+      upload.file,
+      analysisType,
       questions
     );
     
@@ -495,18 +755,13 @@ images.post('/analyze', async (c) => {
 });
 
 // Analyze image from URL
-images.post('/analyze-url', async (c) => {
+images.post('/analyze-url', rateLimit(), async (c) => {
   try {
-    const { url, type = 'airport', questions } = await c.req.json();
+    const parsed = await parseJsonBody(c, imageUrlSchema);
+    if ('response' in parsed) return parsed.response;
+    const { url, type, questions } = parsed.data;
     
-    if (!url) {
-      return c.json({
-        success: false,
-        error: { code: 'MISSING_URL', message: 'No image URL provided' },
-      }, 400);
-    }
-    
-    const result = await analyzeImage(url, type, questions);
+    const result = await analyzeImage(url, type ?? 'airport', questions);
     
     return c.json({ success: true, data: result });
   } catch (error) {
@@ -582,7 +837,7 @@ function normalizeASRSDate(date: string | null): string {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
-// Adapter: HistoricalIncident (ASRS) → Incident
+// Adapter: HistoricalIncident (ASRS) to Incident
 function historicalIncidentToIncident(h: HistoricalIncident): Incident {
   const severityMap: Record<string, Incident['severity']> = {
     'Human Factors': 'moderate',
@@ -619,8 +874,12 @@ function historicalIncidentToIncident(h: HistoricalIncident): Incident {
 incidentsRouter.get('/', async (c) => {
   const severity = c.req.query('severity');
   const source = c.req.query('source');
-  const limit = parseInt(c.req.query('limit') || '50');
-  const offset = parseInt(c.req.query('offset') || '0');
+  const parsedLimit = parseIntegerParam(c, 'limit', 50, { min: 1, max: MAX_PUBLIC_LIMIT });
+  const parsedOffset = parseIntegerParam(c, 'offset', 0, { min: 0 });
+  if ('response' in parsedLimit) return parsedLimit.response;
+  if ('response' in parsedOffset) return parsedOffset.response;
+  const limit = parsedLimit.value;
+  const offset = parsedOffset.value;
 
   try {
     await initializationPromise;
@@ -690,7 +949,7 @@ incidentsRouter.get('/:id', async (c) => {
 });
 
 // Generate incident briefing
-incidentsRouter.post('/:id/briefing', async (c) => {
+incidentsRouter.post('/:id/briefing', rateLimit(), async (c) => {
   try {
     const id = c.req.param('id');
     await initializationPromise;
@@ -724,9 +983,15 @@ incidentsRouter.post('/:id/briefing', async (c) => {
 });
 
 // Create new incident (for manual reporting)
-incidentsRouter.post('/', async (c) => {
+incidentsRouter.post('/', rateLimit(), async (c) => {
   try {
-    const body = await c.req.json();
+    if (!env.ENABLE_PUBLIC_WRITES) {
+      return apiError(c, 403, 'PUBLIC_WRITES_DISABLED', 'Public incident submissions are disabled');
+    }
+
+    const parsed = await parseJsonBody(c, createIncidentSchema);
+    if ('response' in parsed) return parsed.response;
+    const body = parsed.data;
     
     const newIncident: Incident = {
       id: `USR-${Date.now()}`,
@@ -762,16 +1027,11 @@ app.route('/api/incidents', incidentsRouter);
 // Natural Language Query Endpoint
 // ============================================
 
-app.post('/api/query', async (c) => {
+app.post('/api/query', rateLimit(), async (c) => {
   try {
-    const { query, context } = await c.req.json();
-    
-    if (!query) {
-      return c.json({
-        success: false,
-        error: { code: 'MISSING_QUERY', message: 'No query provided' },
-      }, 400);
-    }
+    const parsedBody = await parseJsonBody(c, naturalQuerySchema);
+    if ('response' in parsedBody) return parsedBody.response;
+    const { query } = parsedBody.data;
     
     const parsed = await processNaturalLanguageQuery(query);
     
@@ -891,16 +1151,11 @@ app.get('/api/dashboard/stats', async (c) => {
 // Embeddings Endpoint (for similarity search)
 // ============================================
 
-app.post('/api/embeddings', async (c) => {
+app.post('/api/embeddings', rateLimit(), async (c) => {
   try {
-    const { texts } = await c.req.json();
-    
-    if (!texts || !Array.isArray(texts)) {
-      return c.json({
-        success: false,
-        error: { code: 'INVALID_INPUT', message: 'texts must be an array of strings' },
-      }, 400);
-    }
+    const parsed = await parseJsonBody(c, embeddingsSchema);
+    if ('response' in parsed) return parsed.response;
+    const { texts } = parsed.data;
     
     const embeddings = await generateEmbeddings(texts);
     
@@ -949,7 +1204,9 @@ datasets.get('/aircraft', (c) => {
   const registration = c.req.query('registration');
   const typecode = c.req.query('typecode');
   const manufacturer = c.req.query('manufacturer');
-  const limit = parseInt(c.req.query('limit') || '20');
+  const parsedLimit = parseIntegerParam(c, 'limit', 20, { min: 1, max: MAX_PUBLIC_LIMIT });
+  if ('response' in parsedLimit) return parsedLimit.response;
+  const limit = parsedLimit.value;
 
   const results = hfDatasetsClient.searchAircraft({
     registration: registration || undefined,
@@ -969,8 +1226,12 @@ datasets.get('/aircraft', (c) => {
 datasets.get('/incidents/search', async (c) => {
   try {
     const query = c.req.query('q') || '';
-    const offset = parseInt(c.req.query('offset') || '0');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const parsedOffset = parseIntegerParam(c, 'offset', 0, { min: 0 });
+    const parsedLimit = parseIntegerParam(c, 'limit', 20, { min: 1, max: MAX_PUBLIC_LIMIT });
+    if ('response' in parsedOffset) return parsedOffset.response;
+    if ('response' in parsedLimit) return parsedLimit.response;
+    const offset = parsedOffset.value;
+    const limit = parsedLimit.value;
 
     const results = await hfDatasetsClient.searchIncidents(query, offset, limit);
     return c.json({ success: true, data: results });
@@ -1009,8 +1270,12 @@ datasets.get('/incidents/:id', async (c) => {
 // Browse historical incidents (paginated)
 datasets.get('/incidents', async (c) => {
   try {
-    const offset = parseInt(c.req.query('offset') || '0');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const parsedOffset = parseIntegerParam(c, 'offset', 0, { min: 0 });
+    const parsedLimit = parseIntegerParam(c, 'limit', 20, { min: 1, max: MAX_PUBLIC_LIMIT });
+    if ('response' in parsedOffset) return parsedOffset.response;
+    if ('response' in parsedLimit) return parsedLimit.response;
+    const offset = parsedOffset.value;
+    const limit = parsedLimit.value;
     const primaryProblem = c.req.query('primary_problem');
     const flightPhase = c.req.query('flight_phase');
 
@@ -1034,8 +1299,12 @@ datasets.get('/incidents', async (c) => {
 // Get ATC transcript entries
 datasets.get('/atc', async (c) => {
   try {
-    const offset = parseInt(c.req.query('offset') || '0');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const parsedOffset = parseIntegerParam(c, 'offset', 0, { min: 0 });
+    const parsedLimit = parseIntegerParam(c, 'limit', 20, { min: 1, max: MAX_PUBLIC_LIMIT });
+    if ('response' in parsedOffset) return parsedOffset.response;
+    if ('response' in parsedLimit) return parsedLimit.response;
+    const offset = parsedOffset.value;
+    const limit = parsedLimit.value;
 
     const results = await hfDatasetsClient.getATCTranscripts(offset, limit);
     return c.json({ success: true, data: results });
@@ -1052,8 +1321,12 @@ datasets.get('/atc', async (c) => {
 datasets.get('/atc/search', async (c) => {
   try {
     const query = c.req.query('q') || '';
-    const offset = parseInt(c.req.query('offset') || '0');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const parsedOffset = parseIntegerParam(c, 'offset', 0, { min: 0 });
+    const parsedLimit = parseIntegerParam(c, 'limit', 20, { min: 1, max: MAX_PUBLIC_LIMIT });
+    if ('response' in parsedOffset) return parsedOffset.response;
+    if ('response' in parsedLimit) return parsedLimit.response;
+    const offset = parsedOffset.value;
+    const limit = parsedLimit.value;
 
     const results = await hfDatasetsClient.searchATCTranscripts(query, offset, limit);
     return c.json({ success: true, data: results });
@@ -1081,12 +1354,31 @@ const initializationPromise = (async () => {
 
     userIncidentStore.splice(0, userIncidentStore.length, ...persistedIncidents);
     anomalyStore.splice(0, anomalyStore.length, ...persistedAnomalies);
-
-    await hfDatasetsClient.initialize();
+    readiness.persistence = 'ready';
     console.log('Persistent stores initialized');
+  } catch (error) {
+    readiness.persistence = 'failed';
+    readiness.coreInitializationFailed = true;
+    readiness.error = error instanceof Error ? error.message : String(error);
+    console.error('Persistent store initialization error:', error);
+  }
+
+  try {
+    await hfDatasetsClient.initialize();
+    const status = hfDatasetsClient.getStatus();
+    readiness.datasets =
+      status.historicalIncidents.loaded || status.aircraftMetadata.loaded || status.atcTranscripts.available
+        ? 'ready'
+        : 'degraded';
     console.log('HF Datasets service initialized');
   } catch (error) {
+    readiness.datasets = 'failed';
+    readiness.error = readiness.error
+      ? `${readiness.error}; ${error instanceof Error ? error.message : String(error)}`
+      : error instanceof Error ? error.message : String(error);
     console.error('HF Datasets initialization error:', error);
+  } finally {
+    readiness.initializationComplete = true;
   }
 })();
 
@@ -1122,21 +1414,14 @@ app.get('/api/capabilities', async (c) => {
 });
 
 console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║     █████╗ ██╗██████╗ ███████╗███████╗███╗   ██╗████████╗ ║
-║    ██╔══██╗██║██╔══██╗██╔════╝██╔════╝████╗  ██║╚══██╔══╝ ║
-║    ███████║██║██████╔╝███████╗█████╗  ██╔██╗ ██║   ██║    ║
-║    ██╔══██║██║██╔══██╗╚════██║██╔══╝  ██║╚██╗██║   ██║    ║
-║    ██║  ██║██║██║  ██║███████║███████╗██║ ╚████║   ██║    ║
-║    ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝    ║
-║                                                           ║
-║         Multimodal Aviation Intelligence Platform         ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
+AirSentinel AI API
+Multimodal Aviation Intelligence Platform
 
-🚀 Server starting on port ${port}
-📡 Mode: ${isDemoMode ? 'DEMO (AI features mocked)' : 'PRODUCTION'}
+Server starting on port ${port}
+Environment: ${env.APP_ENV}
+Mode: ${isDemoMode ? 'DEMO (AI features mocked)' : 'PRODUCTION'}
+Frontend origin: ${env.FRONTEND_ORIGIN}
+Public writes: ${env.ENABLE_PUBLIC_WRITES ? 'enabled' : 'disabled'}
 `);
 
 export default {
