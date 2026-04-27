@@ -119,6 +119,9 @@ FRONTEND_ORIGIN=http://localhost:5173
 # Public writes are disabled by default for the V1 public demo posture.
 ENABLE_PUBLIC_WRITES=false
 
+# Only enable when the deployment platform overwrites forwarded IP headers.
+TRUST_PROXY_HEADERS=false
+
 # Optional. Without this, AI features run in demo mode.
 HUGGINGFACE_API_KEY=
 

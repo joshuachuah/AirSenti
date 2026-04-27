@@ -4,7 +4,9 @@
 
 import { z } from 'zod';
 
-const booleanString = z.string().transform((value) => value === 'true');
+const booleanString = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true');
 
 const positiveNumberString = z
   .string()
@@ -45,6 +47,7 @@ const envSchema = z.object({
   ENABLE_ATC_PROCESSING: booleanString.default('true'),
   ENABLE_IMAGE_ANALYSIS: booleanString.default('true'),
   ENABLE_PUBLIC_WRITES: booleanString.default('false'),
+  TRUST_PROXY_HEADERS: booleanString.default('false'),
 
   // Rate Limits
   OPENSKY_RATE_LIMIT_MS: positiveNumberString.default('10000'),

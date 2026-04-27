@@ -13,6 +13,7 @@ beforeAll(async () => {
   process.env.FRONTEND_ORIGIN = 'http://localhost:5173';
   process.env.RATE_LIMIT_MAX = '2';
   process.env.RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.MAX_UPLOAD_BYTES = '10';
   delete process.env.HUGGINGFACE_API_KEY;
   app = await import('./index').then((module) => module.default);
 });
@@ -23,6 +24,7 @@ afterAll(async () => {
   delete process.env.FRONTEND_ORIGIN;
   delete process.env.RATE_LIMIT_MAX;
   delete process.env.RATE_LIMIT_WINDOW_MS;
+  delete process.env.MAX_UPLOAD_BYTES;
   await rm(testDir, { recursive: true, force: true });
 });
 
@@ -147,26 +149,44 @@ describe('API response shapes', () => {
 
   it('rate limits expensive POST routes', async () => {
     const requestBody = JSON.stringify({ texts: ['one'] });
-    const makeRequest = () => app.fetch(
+    const makeRequest = (spoofedIp: string) => app.fetch(
       new Request('http://localhost/api/embeddings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-forwarded-for': '203.0.113.10',
+          'x-forwarded-for': spoofedIp,
         },
         body: requestBody,
       })
     );
 
-    expect((await makeRequest()).status).toBe(200);
-    expect((await makeRequest()).status).toBe(200);
+    expect((await makeRequest('203.0.113.10')).status).toBe(200);
+    expect((await makeRequest('203.0.113.11')).status).toBe(200);
 
-    const limited = await makeRequest();
+    const limited = await makeRequest('203.0.113.12');
     const json = await limited.json();
 
     expect(limited.status).toBe(429);
     expect(json.success).toBe(false);
     expect(json.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('rejects oversized upload bodies before multipart parsing', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/api/images/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': '34',
+        },
+        body: 'this body is larger than ten bytes',
+      })
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('UPLOAD_TOO_LARGE');
   });
 });
 

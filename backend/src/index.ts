@@ -6,6 +6,7 @@ import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
+import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { env, isDemoMode } from './config/env';
 import { openSkyClient } from './services/opensky';
@@ -121,14 +122,28 @@ async function parseJsonBody<T>(c: Context, schema: z.ZodSchema<T>): Promise<
 }
 
 function getClientIp(c: Context): string {
+  if (!env.TRUST_PROXY_HEADERS) {
+    return 'direct';
+  }
+
   return (
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
     c.req.header('x-real-ip') ||
-    'unknown'
+    'direct'
   );
 }
 
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+const uploadBodyLimit = bodyLimit({
+  maxSize: env.MAX_UPLOAD_BYTES,
+  onError: (c) => apiError(
+    c,
+    413,
+    'UPLOAD_TOO_LARGE',
+    'Request body exceeds the configured upload size limit'
+  ),
+});
 
 function rateLimit() {
   return async (c: Context, next: Next) => {
@@ -614,7 +629,7 @@ app.route('/api/anomalies', anomaliesRouter);
 const atc = new Hono();
 
 // Process ATC audio file
-atc.post('/transcribe', rateLimit(), async (c) => {
+atc.post('/transcribe', rateLimit(), uploadBodyLimit, async (c) => {
   try {
     const body = await c.req.parseBody();
     const upload = validateUpload(c, body['audio'] as File | undefined, 'audio');
@@ -702,7 +717,7 @@ app.route('/api/atc', atc);
 const images = new Hono();
 
 // Analyze uploaded image
-images.post('/analyze', rateLimit(), async (c) => {
+images.post('/analyze', rateLimit(), uploadBodyLimit, async (c) => {
   try {
     const body = await c.req.parseBody();
     const upload = validateUpload(c, body['image'] as File | undefined, 'image');

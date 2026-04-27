@@ -17,4 +17,13 @@ describe('environment configuration', () => {
     expect(env.FRONTEND_ORIGIN).toBe('http://localhost:5173');
     expect(env.ENABLE_PUBLIC_WRITES).toBe(false);
   });
+
+  it('rejects invalid boolean strings in production', () => {
+    expect(() => loadEnvFrom({
+      NODE_ENV: 'production',
+      APP_ENV: 'production',
+      FRONTEND_ORIGIN: 'https://airsentinel.example',
+      ENABLE_HF_DATASETS: 'treu',
+    })).toThrow('Invalid production environment variables');
+  });
 });
