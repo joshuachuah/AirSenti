@@ -82,11 +82,15 @@ function parseNumberParam(
   options: { min?: number; max?: number; required?: boolean } = {}
 ): { value: number } | { response: Response } {
   const raw = c.req.query(name);
-  if (raw === undefined || raw === '') {
+  if (raw === undefined) {
     if (options.required) {
       return { response: apiError(c, 400, 'INVALID_PARAMS', `${name} is required`) };
     }
     return { value: 0 };
+  }
+
+  if (raw === '') {
+    return { response: apiError(c, 400, 'INVALID_PARAMS', `${name} must not be empty`) };
   }
 
   const value = Number(raw);
@@ -134,6 +138,7 @@ function getClientIp(c: Context): string {
 }
 
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+let nextRateLimitCleanupAt = 0;
 
 const uploadBodyLimit = bodyLimit({
   maxSize: env.MAX_UPLOAD_BYTES,
@@ -145,9 +150,30 @@ const uploadBodyLimit = bodyLimit({
   ),
 });
 
+function pruneExpiredRateLimits(now: number): void {
+  if (now < nextRateLimitCleanupAt) return;
+
+  for (const [key, entry] of rateLimitStore.entries()) {
+    if (entry.resetAt <= now) {
+      rateLimitStore.delete(key);
+    }
+  }
+
+  nextRateLimitCleanupAt = now + Math.min(env.RATE_LIMIT_WINDOW_MS, 60000);
+}
+
+function isUploadTooLargeError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'BodyLimitError' || error.message === 'Payload Too Large')
+  );
+}
+
 function rateLimit() {
   return async (c: Context, next: Next) => {
     const now = Date.now();
+    pruneExpiredRateLimits(now);
+
     const routeKey = `${c.req.method}:${new URL(c.req.url).pathname}`;
     const key = `${getClientIp(c)}:${routeKey}`;
     const current = rateLimitStore.get(key);
@@ -650,6 +676,10 @@ atc.post('/transcribe', rateLimit(), uploadBodyLimit, async (c) => {
       },
     });
   } catch (error) {
+    if (isUploadTooLargeError(error)) {
+      return apiError(c, 413, 'UPLOAD_TOO_LARGE', 'Request body exceeds the configured upload size limit');
+    }
+
     console.error('Error processing ATC audio:', error);
     return c.json({
       success: false,
@@ -761,6 +791,10 @@ images.post('/analyze', rateLimit(), uploadBodyLimit, async (c) => {
     
     return c.json({ success: true, data: result });
   } catch (error) {
+    if (isUploadTooLargeError(error)) {
+      return apiError(c, 413, 'UPLOAD_TOO_LARGE', 'Request body exceeds the configured upload size limit');
+    }
+
     console.error('Error analyzing image:', error);
     return c.json({
       success: false,

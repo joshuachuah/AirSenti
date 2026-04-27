@@ -147,6 +147,15 @@ describe('API response shapes', () => {
     expect(json.error.code).toBe('INVALID_PARAMS');
   });
 
+  it('rejects empty optional numeric query values', async () => {
+    const response = await app.fetch(new Request('http://localhost/api/flights/radius?lat=40&lon=-73&radius_nm='));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('INVALID_PARAMS');
+  });
+
   it('rate limits expensive POST routes', async () => {
     const requestBody = JSON.stringify({ texts: ['one'] });
     const makeRequest = (spoofedIp: string) => app.fetch(
@@ -180,6 +189,27 @@ describe('API response shapes', () => {
           'Content-Length': '34',
         },
         body: 'this body is larger than ten bytes',
+      })
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('UPLOAD_TOO_LARGE');
+  });
+
+  it('maps chunked oversized multipart uploads to upload limit errors', async () => {
+    const formData = new FormData();
+    formData.append(
+      'image',
+      new Blob(['this body is larger than ten bytes'], { type: 'text/plain' }),
+      'oversized.txt'
+    );
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/images/analyze', {
+        method: 'POST',
+        body: formData,
       })
     );
     const json = await response.json();
