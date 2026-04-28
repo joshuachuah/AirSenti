@@ -1,8 +1,19 @@
 import { cn, formatTime } from '../utils';
 import { useLiveATC } from '../api/hooks';
+import { EmptyState, ErrorState } from './StatusPrimitives';
+import { Radio } from 'lucide-react';
 
 export function ATCFeed() {
-  const { data, isLoading } = useLiveATC();
+  const { data, isLoading, isError, error } = useLiveATC();
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="ATC feed unavailable"
+        message={error instanceof Error ? error.message : 'The ATC endpoint did not respond.'}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -49,7 +60,11 @@ export function ATCFeed() {
         </div>
       ))}
       {transmissions.length === 0 && (
-        <div className="text-center py-8 text-gray-600 text-sm">No ATC transmissions received</div>
+        <EmptyState
+          icon={Radio}
+          title="No ATC transmissions"
+          message="No live, archived, or demo transmissions are available for the selected feed."
+        />
       )}
     </div>
   );

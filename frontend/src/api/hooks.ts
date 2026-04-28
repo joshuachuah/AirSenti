@@ -3,6 +3,7 @@
 // ============================================
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FRONTEND_CONFIG } from '../config';
 import type {
   AircraftMetadata,
   ATCDatasetSearchResult,
@@ -37,7 +38,7 @@ export type {
   IncidentBriefing,
 } from '../../../shared/types';
 
-const API_BASE = '/api';
+const API_BASE = FRONTEND_CONFIG.apiBase;
 
 // Generic fetch wrapper
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -48,6 +49,13 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
     },
     ...options,
   });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `API returned a non-JSON response for ${endpoint}. Check VITE_API_BASE or the deployment API rewrite.`,
+    );
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Network error' }));

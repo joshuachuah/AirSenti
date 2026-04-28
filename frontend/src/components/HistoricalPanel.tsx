@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FileText, Search, ChevronLeft, ChevronRight, Plane, MapPin } from 'lucide-react';
 import { cn, formatNumber } from '../utils';
 import { useHistoricalIncidents, useHistoricalIncidentSearch, type HistoricalIncident } from '../api/hooks';
+import { DataSourceBadge, EmptyState, ErrorState } from './StatusPrimitives';
 
 function HistoricalIncidentCard({ incident }: { incident: HistoricalIncident }) {
   const [expanded, setExpanded] = useState(false);
@@ -87,12 +88,12 @@ export function HistoricalPanel() {
   const [page, setPage] = useState(0);
   const pageSize = 10;
 
-  const { data: browseData, isLoading: browseLoading } = useHistoricalIncidents({
+  const { data: browseData, isLoading: browseLoading, isError: browseError, error: browseErrorValue } = useHistoricalIncidents({
     offset: page * pageSize,
     limit: pageSize,
   });
 
-  const { data: searchData, isLoading: searchLoading } = useHistoricalIncidentSearch(activeSearch, {
+  const { data: searchData, isLoading: searchLoading, isError: searchError, error: searchErrorValue } = useHistoricalIncidentSearch(activeSearch, {
     offset: 0,
     limit: 20,
     enabled: !!activeSearch,
@@ -106,6 +107,8 @@ export function HistoricalPanel() {
 
   const data = activeSearch ? searchData : browseData;
   const isLoading = activeSearch ? searchLoading : browseLoading;
+  const isError = activeSearch ? searchError : browseError;
+  const error = activeSearch ? searchErrorValue : browseErrorValue;
   const incidents = data?.incidents || [];
 
   return (
@@ -116,6 +119,7 @@ export function HistoricalPanel() {
           <span className="font-display font-bold text-base text-gray-200 tracking-wide">
             ASRS Safety Reports
           </span>
+          <DataSourceBadge source="asrs" />
         </h2>
         <div className="text-xs font-mono text-gray-600">
           {data?.total ? `${formatNumber(data.total)} reports` : ''}
@@ -148,16 +152,27 @@ export function HistoricalPanel() {
         </button>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <ErrorState
+          title="ASRS reports unavailable"
+          message={error instanceof Error ? error.message : 'Historical incident reports could not be loaded.'}
+        />
+      ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-24 rounded-lg loading-shimmer" />
           ))}
         </div>
       ) : incidents.length === 0 ? (
-        <div className="text-gray-600 text-center py-12 text-sm">
-          {activeSearch ? `No results for "${activeSearch}"` : 'No historical incidents loaded'}
-        </div>
+        <EmptyState
+          icon={FileText}
+          title={activeSearch ? 'No matching ASRS reports' : 'No historical reports loaded'}
+          message={
+            activeSearch
+              ? `No archived reports matched "${activeSearch}".`
+              : 'The ASRS archive cache is empty or unavailable.'
+          }
+        />
       ) : (
         <div className="space-y-2">
           {incidents.map((incident: HistoricalIncident) => (

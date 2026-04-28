@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, FileText, Plus, Send, Database } from 'lucide-react';
 import { IncidentCard } from '../components/IncidentCard';
 import { useCreateIncident, useIncidents, useDatasetStatus, type Incident as IncidentType } from '../api/hooks';
+import { FRONTEND_CONFIG } from '../config';
+import { DataSourceBadge, EmptyState, ErrorState } from '../components/StatusPrimitives';
 
 type IncidentDraft = {
   title: string;
@@ -24,7 +26,7 @@ const initialDraft: IncidentDraft = {
 };
 
 export function Incidents() {
-  const { data: incidents, isLoading } = useIncidents({ limit: 20 });
+  const { data: incidents, isLoading, isError, error } = useIncidents({ limit: 20 });
   const { data: datasetStatus } = useDatasetStatus();
   const createIncident = useCreateIncident();
   const [showReporter, setShowReporter] = useState(false);
@@ -42,33 +44,47 @@ export function Incidents() {
           <h2 className="font-display font-bold text-base text-gray-200 tracking-wide">
             AVIATION INCIDENTS
           </h2>
-          {datasetStatus?.historicalIncidents?.loaded ? (
-            <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
-              <Database className="w-3 h-3" />
-              ASRS DATABASE
-            </span>
-          ) : (
-            <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-yellow-500/20 text-yellow-500">
-              DEMO DATA
-            </span>
-          )}
+          <DataSourceBadge source={datasetStatus?.historicalIncidents?.loaded ? 'asrs' : 'demo'} label={datasetStatus?.historicalIncidents?.loaded ? 'ASRS DATABASE' : 'DEMO DATA'} />
           <button
-            className="btn-primary text-xs py-2 flex items-center gap-2"
-            onClick={() => setShowReporter(true)}
+            className="btn-primary text-xs py-2 flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!FRONTEND_CONFIG.publicWritesEnabled}
+            title={
+              FRONTEND_CONFIG.publicWritesEnabled
+                ? 'Submit an incident report'
+                : 'Public writes are disabled for this V1 demo'
+            }
+            onClick={() => {
+              if (FRONTEND_CONFIG.publicWritesEnabled) setShowReporter(true);
+            }}
           >
             <Plus className="w-3.5 h-3.5" />
-            Report Incident
+            {FRONTEND_CONFIG.publicWritesEnabled ? 'Report Incident' : 'Read-Only Mode'}
           </button>
         </div>
 
-        {isLoading ? (
+        {!FRONTEND_CONFIG.publicWritesEnabled && (
+          <div className="mb-4 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-[11px] font-mono text-blue-300">
+            Public incident submission is disabled. This deployment is browse-only until authenticated/admin writes are added.
+          </div>
+        )}
+
+        {isError ? (
+          <ErrorState
+            title="Incidents unavailable"
+            message={error instanceof Error ? error.message : 'The incidents endpoint did not respond.'}
+          />
+        ) : isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-32 rounded-lg loading-shimmer" />
             ))}
           </div>
         ) : !incidents || incidents.length === 0 ? (
-          <div className="text-center py-16 text-gray-600 text-sm">No incidents reported</div>
+          <EmptyState
+            icon={Database}
+            title="No incident records"
+            message="No ASRS or demo incidents are available from the backend right now."
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {incidents.map((incident: IncidentType, i: number) => (
@@ -84,7 +100,7 @@ export function Incidents() {
         )}
       </div>
 
-      {showReporter && (
+      {showReporter && FRONTEND_CONFIG.publicWritesEnabled && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-void-950/75 px-4 backdrop-blur-sm">
           <div className="hud-panel w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="mb-5 flex items-center justify-between gap-4">
@@ -220,6 +236,11 @@ export function Incidents() {
                 {createIncident.isPending ? 'Submitting' : 'Submit incident'}
               </button>
             </div>
+            {createIncident.isError && (
+              <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">
+                {createIncident.error instanceof Error ? createIncident.error.message : 'Incident submission failed.'}
+              </div>
+            )}
           </div>
         </div>
       )}

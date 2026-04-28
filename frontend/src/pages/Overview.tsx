@@ -44,6 +44,7 @@ import {
   formatAltitudeFeet,
   formatSpeed,
 } from '../utils';
+import { DataSourceBadge, ErrorState, FreshnessStamp } from '../components/StatusPrimitives';
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -267,11 +268,11 @@ function AircraftTypeBar({
 // Main Overview Component
 // ---------------------------------------------------------------------------
 export function Overview() {
-  const { data: stats } = useDashboardStats();
-  const { data: flightsData } = useFlights({ limit: 50 });
-  const { data: anomalies, isLoading: anomaliesLoading } = useAnomalies({ limit: 10 });
-  const { data: incidents, isLoading: incidentsLoading } = useIncidents({ limit: 10 });
-  const { data: datasetStatus } = useDatasetStatus();
+  const { data: stats, isError: statsError, error: statsErrorValue } = useDashboardStats();
+  const { data: flightsData, isError: flightsError } = useFlights({ limit: 50 });
+  const { data: anomalies, isLoading: anomaliesLoading, isError: anomaliesError } = useAnomalies({ limit: 10 });
+  const { data: incidents, isLoading: incidentsLoading, isError: incidentsError } = useIncidents({ limit: 10 });
+  const { data: datasetStatus, isError: datasetError } = useDatasetStatus();
 
   const aircraft = flightsData?.aircraft || [];
   const flightAnomalies = flightsData?.anomalies || [];
@@ -399,6 +400,25 @@ export function Overview() {
 
   return (
     <div className="space-y-5">
+      {statsError && (
+        <ErrorState
+          title="Dashboard summary unavailable"
+          message={statsErrorValue instanceof Error ? statsErrorValue.message : 'Dashboard stats could not be loaded.'}
+        />
+      )}
+
+      <div className="hud-panel px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <DataSourceBadge source={stats?.data_sources?.flights || (flightsError ? 'unavailable' : 'checking')} label="FLIGHTS" />
+            <DataSourceBadge source={stats?.data_sources?.anomalies || (anomaliesError ? 'unavailable' : 'checking')} label="ANOMALIES" />
+            <DataSourceBadge source={stats?.data_sources?.incidents === 'asrs' ? 'asrs' : stats?.data_sources?.incidents || (incidentsError ? 'unavailable' : 'checking')} label="INCIDENTS" />
+            <DataSourceBadge source={stats?.data_sources?.atc || 'checking'} label="ATC" />
+            <DataSourceBadge source={datasetError ? 'unavailable' : datasetStatus ? 'archive' : 'checking'} label="DATASETS" />
+          </div>
+          <FreshnessStamp timestamp={stats?.last_updated} fallback="Waiting for first refresh" />
+        </div>
+      </div>
       {/* ────────────────────── TOP HERO STRIP ────────────────────── */}
       <div className="hud-panel p-0 overflow-hidden opacity-0 animate-slide-up stagger-1">
         <div className="relative">

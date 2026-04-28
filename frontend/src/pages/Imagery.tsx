@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ImagePlus, Link2, Radar, Search, Sparkles } from 'lucide-react';
-import { useAnalyzeImage, useAnalyzeImageUrl } from '../api/hooks';
+import { useAnalyzeImage, useAnalyzeImageUrl, useCapabilities } from '../api/hooks';
+import { DataSourceBadge, ErrorState, SafetyNotice } from '../components/StatusPrimitives';
 
 type AnalysisType = 'satellite' | 'airport' | 'aircraft' | 'incident';
 type InputMode = 'upload' | 'url';
@@ -20,6 +21,7 @@ export function Imagery() {
 
   const analyzeFile = useAnalyzeImage();
   const analyzeUrl = useAnalyzeImageUrl();
+  const { data: capabilities } = useCapabilities();
 
   const questions = useMemo(
     () => questionInput.split('\n').map((line) => line.trim()).filter(Boolean),
@@ -28,6 +30,13 @@ export function Imagery() {
 
   const result = inputMode === 'upload' ? analyzeFile.data : analyzeUrl.data;
   const isPending = inputMode === 'upload' ? analyzeFile.isPending : analyzeUrl.isPending;
+  const activeError = inputMode === 'upload' ? analyzeFile.error : analyzeUrl.error;
+  const isError = inputMode === 'upload' ? analyzeFile.isError : analyzeUrl.isError;
+  const aiSource = capabilities?.image_analysis?.live
+    ? 'live'
+    : capabilities?.image_analysis
+      ? 'demo'
+      : 'checking';
 
   return (
     <div className="space-y-5">
@@ -43,7 +52,11 @@ export function Imagery() {
               This exposes the existing backend image-analysis endpoints through a dedicated investigation surface.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <DataSourceBadge
+              source={aiSource}
+              label={aiSource === 'live' ? 'AI LIVE' : aiSource === 'demo' ? 'AI DEMO' : undefined}
+            />
             <button
               className={`btn-ghost ${inputMode === 'upload' ? 'bg-radar-400/10 text-radar-400' : ''}`}
               onClick={() => setInputMode('upload')}
@@ -61,6 +74,7 @@ export function Imagery() {
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
+            <SafetyNotice />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="data-label">Analysis mode</span>
@@ -124,7 +138,12 @@ export function Imagery() {
           </div>
 
           <div className="hud-panel p-5 min-h-[420px]">
-            {result ? (
+            {isError ? (
+              <ErrorState
+                title="Image analysis failed"
+                message={activeError instanceof Error ? activeError.message : 'The image analysis endpoint did not respond.'}
+              />
+            ) : result ? (
               <div className="space-y-4">
                 <div>
                   <div className="mb-2 flex items-center gap-2 text-radar-400">
