@@ -3,6 +3,7 @@
 // ============================================
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FRONTEND_CONFIG } from '../config';
 import type {
   AircraftMetadata,
   ATCDatasetSearchResult,
@@ -37,7 +38,24 @@ export type {
   IncidentBriefing,
 } from '../../../shared/types';
 
-const API_BASE = '/api';
+const API_BASE = FRONTEND_CONFIG.apiBase;
+
+async function parseApiResponse<T>(response: Response, endpoint: string): Promise<T> {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `API returned a non-JSON response for ${endpoint}. Check VITE_API_BASE or the deployment API rewrite.`,
+    );
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Network error' }));
+    throw new Error(error.error?.message || error.message || 'Request failed');
+  }
+
+  const data = await response.json();
+  return data.data ?? data;
+}
 
 // Generic fetch wrapper
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -49,13 +67,7 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options,
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Network error' }));
-    throw new Error(error.error?.message || error.message || 'Request failed');
-  }
-
-  const data = await response.json();
-  return data.data || data;
+  return parseApiResponse<T>(response, endpoint);
 }
 
 export interface LiveATCResponse {
@@ -240,9 +252,7 @@ export function useTranscribeAudio() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Transcription failed');
-      const data = await response.json();
-      return data.data as ATCTranscript;
+      return parseApiResponse<ATCTranscript>(response, '/atc/transcribe');
     },
   });
 }
@@ -270,9 +280,7 @@ export function useAnalyzeImage() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Analysis failed');
-      const data = await response.json();
-      return data.data as ImageAnalysisResult;
+      return parseApiResponse<ImageAnalysisResult>(response, '/images/analyze');
     },
   });
 }

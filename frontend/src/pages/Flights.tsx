@@ -36,6 +36,7 @@ import {
 } from '../utils';
 import { FlightCard } from '../components/FlightCard';
 import { FlightReplayPanel } from '../components/FlightReplayPanel';
+import { DataSourceBadge, EmptyState, ErrorState } from '../components/StatusPrimitives';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -664,7 +665,7 @@ function AltitudeDistributionBar({ aircraft }: { aircraft: EnrichedAircraft[] })
 // Main Flights Page
 // ---------------------------------------------------------------------------
 export function Flights() {
-  const { data: flightsData, isLoading } = useFlights({ limit: 100 });
+  const { data: flightsData, isLoading, isError, error, dataUpdatedAt } = useFlights({ limit: 100 });
   const aircraft = flightsData?.aircraft || [];
   const flightAnomalies = flightsData?.anomalies || [];
 
@@ -782,26 +783,34 @@ export function Flights() {
             </span>
           )}
         </span>
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-radar-400 animate-pulse" />
-          <span className="text-[10px] font-mono text-gray-600">LIVE 15s</span>
+        <div className="flex items-center gap-2">
+          <DataSourceBadge source={isError ? 'unavailable' : 'live'} label={dataUpdatedAt ? 'LIVE 15s' : 'CHECKING'} />
         </div>
       </div>
 
       {/* Main content */}
-      {isLoading ? (
+      {isError ? (
+        <ErrorState
+          title="Flight feed unavailable"
+          message={error instanceof Error ? error.message : 'OpenSky flight data could not be loaded.'}
+        />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
           {Array.from({ length: 9 }).map((_, i) => (
             <div key={i} className="h-40 rounded-xl loading-shimmer" />
           ))}
         </div>
       ) : filteredAircraft.length === 0 ? (
-        <div className="hud-panel p-16 text-center">
-          <Plane className="w-10 h-10 text-gray-700 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm font-display">
-            No flights match your criteria
-          </p>
-          {searchQuery && (
+        <EmptyState
+          icon={Plane}
+          title={aircraft.length === 0 ? 'No live flights available' : 'No flights match your criteria'}
+          message={
+            aircraft.length === 0
+              ? 'The backend returned an empty OpenSky feed. This can happen during provider outages or regional quiet periods.'
+              : 'Adjust the search term, status filter, or sort order to broaden the result set.'
+          }
+          action={
+            searchQuery && (
             <button
               onClick={() => {
                 setSearchInput('');
@@ -811,8 +820,9 @@ export function Flights() {
             >
               Clear search
             </button>
-          )}
-        </div>
+            )
+          }
+        />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
           {filteredAircraft.map((ac, i) => {

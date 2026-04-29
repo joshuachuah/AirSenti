@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Bell, Settings, Wifi } from 'lucide-react';
+import { Bell, Info, Wifi } from 'lucide-react';
 
-export function Header() {
+export function Header({ onAboutOpen }: { onAboutOpen: () => void }) {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -49,12 +49,12 @@ export function Header() {
 
         {/* Action buttons */}
         <div className="flex items-center gap-1">
-          <button className="btn-ghost p-2 relative">
+          <button className="btn-ghost p-2 relative" title="Advisory alerts are read-only in public V1">
             <Bell className="w-4 h-4" />
             <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-amber-400 rounded-full" />
           </button>
-          <button className="btn-ghost p-2">
-            <Settings className="w-4 h-4" />
+          <button className="btn-ghost p-2" onClick={onAboutOpen} title="About data sources and limitations">
+            <Info className="w-4 h-4" />
           </button>
         </div>
       </div>

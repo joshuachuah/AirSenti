@@ -1,7 +1,8 @@
-import { Volume2, Archive, Radio, AlertTriangle } from 'lucide-react';
+import { Volume2, Radio } from 'lucide-react';
 import { ATCFeed } from '../components/ATCFeed';
 import { useLiveATC } from '../api/hooks';
 import { cn } from '../utils';
+import { DataSourceBadge, type SourceState } from '../components/StatusPrimitives';
 
 export function ATC() {
   const { data } = useLiveATC();
@@ -25,21 +26,7 @@ export function ATC() {
             <span className="font-display font-bold text-base text-gray-200 tracking-wide">
               ATC COMMUNICATIONS
             </span>
-            {source === 'archive' ? (
-              <span className="flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-1 rounded bg-blue-500/20 text-blue-400">
-                <Archive className="w-3 h-3" />
-                ARCHIVE
-              </span>
-            ) : source === 'demo' ? (
-              <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-yellow-500/20 text-yellow-500">
-                DEMO DATA
-              </span>
-            ) : source === 'unavailable' ? (
-              <span className="flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-1 rounded bg-gray-500/20 text-gray-500">
-                <AlertTriangle className="w-3 h-3" />
-                UNAVAILABLE
-              </span>
-            ) : null}
+            <DataSourceBadge source={source as SourceState} label={source === 'demo' ? 'DEMO DATA' : undefined} />
           </h2>
           <div className="flex items-center gap-2">
             <div className={cn(

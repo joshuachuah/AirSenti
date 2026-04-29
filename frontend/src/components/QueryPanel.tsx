@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, MessageSquare, Sparkles, ArrowRight } from 'lucide-react';
 import { useNaturalQuery } from '../api/hooks';
+import { ErrorState } from './StatusPrimitives';
 
 const SUGGESTIONS = [
   'Show all emergency flights',
@@ -52,6 +53,13 @@ export function QueryPanel() {
       </form>
 
       {/* AI Response */}
+      {naturalQuery.isError && (
+        <ErrorState
+          title="Query failed"
+          message={naturalQuery.error instanceof Error ? naturalQuery.error.message : 'The AI query endpoint did not respond.'}
+        />
+      )}
+
       {naturalQuery.data && (
         <div className="hud-panel p-5">
           <div className="flex items-center gap-2 mb-3">

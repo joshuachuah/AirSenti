@@ -38,6 +38,7 @@ Thumbs.db
 bun.lockb
 
 backend/data/
+tmp-review-data/
 
 /tasks
 PLAN.md

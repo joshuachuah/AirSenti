@@ -1,9 +1,19 @@
 import { Database } from 'lucide-react';
 import { cn, formatCompact } from '../utils';
 import { useDatasetStatus } from '../api/hooks';
+import { DataSourceBadge, ErrorState, FreshnessStamp } from './StatusPrimitives';
 
 export function DatasetStatus() {
-  const { data: status, isLoading } = useDatasetStatus();
+  const { data: status, isLoading, isError, error } = useDatasetStatus();
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Dataset status unavailable"
+        message={error instanceof Error ? error.message : 'Dataset readiness could not be loaded.'}
+      />
+    );
+  }
 
   if (isLoading || !status) {
     return (
@@ -20,6 +30,8 @@ export function DatasetStatus() {
       loaded: status.aircraftMetadata.loaded,
       color: 'text-radar-400',
       sub: 'aircraft records',
+      source: status.aircraftMetadata.loaded ? 'archive' : 'unavailable',
+      updated: status.aircraftMetadata.lastUpdated,
     },
     {
       label: 'ASRS Safety Reports',
@@ -27,6 +39,8 @@ export function DatasetStatus() {
       loaded: status.historicalIncidents.loaded,
       color: 'text-amber-400',
       sub: `of ${formatCompact(status.historicalIncidents.totalAvailable)} total`,
+      source: status.historicalIncidents.loaded ? 'asrs' : 'demo',
+      updated: status.historicalIncidents.lastUpdated,
     },
     {
       label: 'ATC Transcripts',
@@ -34,8 +48,10 @@ export function DatasetStatus() {
       loaded: status.atcTranscripts.available,
       color: 'text-blue-400',
       sub: 'entries available',
+      source: status.atcTranscripts.available ? 'archive' : 'unavailable',
+      updated: null,
     },
-  ];
+  ] as const;
 
   return (
     <div className="hud-panel p-5">
@@ -53,17 +69,15 @@ export function DatasetStatus() {
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-sans font-medium text-gray-400">{ds.label}</span>
-              <div
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full',
-                  ds.loaded ? 'bg-green-500' : 'bg-yellow-500 animate-pulse',
-                )}
-              />
+              <DataSourceBadge source={ds.source} />
             </div>
             <div className={cn('text-xl font-display font-bold', ds.color)}>
               {formatCompact(ds.count)}
             </div>
-            <div className="text-[10px] font-mono text-gray-600">{ds.sub}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-mono text-gray-600">
+              <span>{ds.sub}</span>
+              <FreshnessStamp timestamp={ds.updated} fallback={ds.loaded ? 'Archive cache' : 'Unavailable'} />
+            </div>
           </div>
         ))}
       </div>

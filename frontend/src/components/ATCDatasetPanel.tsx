@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Radio, Search, ChevronLeft } from 'lucide-react';
 import { formatCompact } from '../utils';
 import { useATCDataset, useATCDatasetSearch, type ATCDatasetEntry } from '../api/hooks';
+import { DataSourceBadge, EmptyState, ErrorState } from './StatusPrimitives';
 
 export function ATCDatasetPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
 
-  const { data: browseData, isLoading: browseLoading } = useATCDataset({ limit: 20 });
-  const { data: searchData, isLoading: searchLoading } = useATCDatasetSearch(activeSearch);
+  const { data: browseData, isLoading: browseLoading, isError: browseError, error: browseErrorValue } = useATCDataset({ limit: 20 });
+  const { data: searchData, isLoading: searchLoading, isError: searchError, error: searchErrorValue } = useATCDatasetSearch(activeSearch);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,6 +18,8 @@ export function ATCDatasetPanel() {
 
   const data = activeSearch ? searchData : browseData;
   const isLoading = activeSearch ? searchLoading : browseLoading;
+  const isError = activeSearch ? searchError : browseError;
+  const error = activeSearch ? searchErrorValue : browseErrorValue;
   const entries = data?.entries || [];
 
   return (
@@ -27,6 +30,7 @@ export function ATCDatasetPanel() {
           <span className="font-display font-bold text-base text-gray-200 tracking-wide">
             ATC Transcripts
           </span>
+          <DataSourceBadge source="archive" />
         </h2>
         <div className="text-xs font-mono text-gray-600">
           {data?.total ? `${formatCompact(data.total)} entries` : ''}
@@ -59,16 +63,27 @@ export function ATCDatasetPanel() {
         </button>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <ErrorState
+          title="ATC transcript archive unavailable"
+          message={error instanceof Error ? error.message : 'Archived ATC transcripts could not be loaded.'}
+        />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-20 rounded-lg loading-shimmer" />
           ))}
         </div>
       ) : entries.length === 0 ? (
-        <div className="text-gray-600 text-center py-12 text-sm">
-          {activeSearch ? `No results for "${activeSearch}"` : 'No ATC transcripts available'}
-        </div>
+        <EmptyState
+          icon={Radio}
+          title={activeSearch ? 'No matching transcripts' : 'No ATC transcripts available'}
+          message={
+            activeSearch
+              ? `No archived transcript entries matched "${activeSearch}".`
+              : 'The transcript archive is empty or unavailable.'
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {entries.map((entry: ATCDatasetEntry) => (
