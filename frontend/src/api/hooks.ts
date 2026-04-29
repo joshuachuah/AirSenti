@@ -40,16 +40,7 @@ export type {
 
 const API_BASE = FRONTEND_CONFIG.apiBase;
 
-// Generic fetch wrapper
-async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    ...options,
-  });
-
+async function parseApiResponse<T>(response: Response, endpoint: string): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(
@@ -63,7 +54,20 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
   }
 
   const data = await response.json();
-  return data.data || data;
+  return data.data ?? data;
+}
+
+// Generic fetch wrapper
+async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+    ...options,
+  });
+
+  return parseApiResponse<T>(response, endpoint);
 }
 
 export interface LiveATCResponse {
@@ -248,9 +252,7 @@ export function useTranscribeAudio() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Transcription failed');
-      const data = await response.json();
-      return data.data as ATCTranscript;
+      return parseApiResponse<ATCTranscript>(response, '/atc/transcribe');
     },
   });
 }
@@ -278,9 +280,7 @@ export function useAnalyzeImage() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Analysis failed');
-      const data = await response.json();
-      return data.data as ImageAnalysisResult;
+      return parseApiResponse<ImageAnalysisResult>(response, '/images/analyze');
     },
   });
 }

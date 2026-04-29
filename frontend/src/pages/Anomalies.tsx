@@ -22,6 +22,7 @@ export function Anomalies() {
       ? source
       : source.filter((anomaly) => anomaly.severity === severityFilter);
   }, [anomalies, flightAnomalies, severityFilter]);
+  const hasAnomalies = allAnomalies.length > 0;
 
   return (
     <div className="space-y-5">
@@ -52,18 +53,18 @@ export function Anomalies() {
           </div>
         </div>
 
-        {isError ? (
+        {isError && !hasAnomalies ? (
           <ErrorState
             title="Anomalies unavailable"
             message={error instanceof Error ? error.message : 'The anomaly detection endpoint did not respond.'}
           />
-        ) : isLoading ? (
+        ) : isLoading && !hasAnomalies ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-32 rounded-lg loading-shimmer" />
             ))}
           </div>
-        ) : allAnomalies.length === 0 ? (
+        ) : !hasAnomalies ? (
           <EmptyState
             icon={severityFilter === 'all' ? Shield : AlertTriangle}
             title="No anomalies detected"
