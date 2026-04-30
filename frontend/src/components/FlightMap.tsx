@@ -96,7 +96,9 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
     (event: MapLayerMouseEvent) => {
       const feature = event.features?.[0];
       if (!feature) {
-        setHoverInfo(null);
+        if (hoverInfo) setHoverInfo(null);
+        const canvas = event.target.getCanvas();
+        canvas.style.cursor = '';
         return;
       }
       const props = feature.properties;
@@ -111,11 +113,10 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         on_ground: props.on_ground as boolean,
         is_emergency: props.is_emergency as boolean,
       });
-      // Change cursor
       const canvas = event.target.getCanvas();
       canvas.style.cursor = 'pointer';
     },
-    [],
+    [hoverInfo],
   );
 
   const handleMouseLeave = useCallback(() => {
