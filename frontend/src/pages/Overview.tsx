@@ -31,7 +31,6 @@ import {
   useDatasetStatus,
   type FlightAnomaly,
   type Incident,
-  type EnrichedAircraft,
 } from '../api/hooks';
 import {
   cn,
@@ -41,9 +40,8 @@ import {
   getSeverityColor,
   getAnomalyLabel,
   isEmergencySquawk,
-  formatAltitudeFeet,
-  formatSpeed,
 } from '../utils';
+import { FlightMap } from '../components/FlightMap';
 import { DataSourceBadge, ErrorState, FreshnessStamp } from '../components/StatusPrimitives';
 
 // ---------------------------------------------------------------------------
@@ -551,7 +549,7 @@ export function Overview() {
               <div className="flex items-center gap-3">
                 <div className="w-1.5 h-1.5 rounded-full bg-radar-400 animate-pulse shadow-glow" />
                 <h2 className="font-display font-bold text-sm text-gray-200 tracking-[0.1em]">
-                  LIVE TRACKING
+                  FLIGHT TRACKER
                 </h2>
                 <span className="text-[10px] font-mono text-gray-600 bg-white/[0.03] px-2 py-0.5 rounded">
                   {formatNumber(aircraft.length)} targets
@@ -569,7 +567,7 @@ export function Overview() {
               </div>
             </div>
             <div className="p-3">
-              <RadarMapInline aircraft={aircraft} />
+              <FlightMap aircraft={aircraft} className="w-full h-[440px]" />
             </div>
           </div>
         </div>
@@ -854,125 +852,4 @@ function IncidentRow({ incident }: { incident: Incident }) {
   );
 }
 
-function RadarMapInline({ aircraft }: { aircraft: EnrichedAircraft[] }) {
-  return (
-    <div className="relative w-full min-h-[440px] rounded-lg overflow-hidden bg-void-900">
-      {/* Grid */}
-      <div className="absolute inset-0 dot-grid opacity-40" />
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,255,200,0.015) 0%, transparent 70%)',
-        }}
-      />
-
-      {/* Map silhouette */}
-      <div className="absolute inset-0 opacity-10">
-        <svg viewBox="0 0 1000 500" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
-          <defs>
-            <linearGradient id="mapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00ffc8" stopOpacity="0.1" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.05" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M150,150 Q200,100 300,120 T450,130 Q500,140 550,120 T650,140 L700,160 Q750,180 800,150 L850,170 L800,220 Q750,250 700,240 L650,260 Q600,280 550,260 L500,280 Q450,300 400,280 L350,300 Q300,320 250,300 L200,280 Q150,260 150,220 Z"
-            fill="url(#mapGrad)" stroke="rgba(0,255,200,0.08)" strokeWidth="0.5"
-          />
-          <path
-            d="M100,250 Q150,230 200,250 T300,260 Q350,280 400,320 L350,380 Q300,400 250,380 L200,350 Q150,320 100,340 L80,300 Q90,270 100,250 Z"
-            fill="url(#mapGrad)" stroke="rgba(0,255,200,0.08)" strokeWidth="0.5"
-          />
-          <path
-            d="M700,250 Q750,230 800,250 T900,280 L920,350 Q900,400 850,380 L800,350 Q750,320 700,340 L680,300 Q690,270 700,250 Z"
-            fill="url(#mapGrad)" stroke="rgba(0,255,200,0.08)" strokeWidth="0.5"
-          />
-        </svg>
-      </div>
-
-      {/* Radar sweep */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="relative w-64 h-64">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="absolute rounded-full border"
-              style={{
-                borderColor: `rgba(0,255,200,${0.05 - i * 0.012})`,
-                width: `${i * 33}%`,
-                height: `${i * 33}%`,
-                top: `${50 - i * 16.5}%`,
-                left: `${50 - i * 16.5}%`,
-              }}
-            />
-          ))}
-          <div className="absolute inset-0 animate-sweep origin-center">
-            <div
-              className="absolute top-1/2 left-1/2 w-1/2 h-[1px] origin-left"
-              style={{
-                background: 'linear-gradient(90deg, rgba(0,255,200,0.5), transparent)',
-                boxShadow: '0 0 6px rgba(0,255,200,0.2)',
-              }}
-            />
-          </div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-radar-400 rounded-full shadow-glow" />
-        </div>
-      </div>
-
-      {/* Aircraft dots */}
-      <div className="absolute inset-0">
-        {aircraft.slice(0, 40).map((ac) => {
-          if (!ac.latitude || !ac.longitude) return null;
-          const x = ((ac.longitude + 180) / 360) * 100;
-          const y = ((90 - ac.latitude) / 180) * 100;
-          const isEmergency = isEmergencySquawk(ac.squawk);
-
-          return (
-            <div
-              key={ac.icao24}
-              className="absolute group cursor-pointer"
-              style={{ left: `${x}%`, top: `${y}%` }}
-            >
-              {/* Ping ring for emergency */}
-              {isEmergency && (
-                <div className="absolute -inset-2 rounded-full border border-red-500/30 radar-ping" />
-              )}
-              <div
-                className={cn(
-                  'w-[5px] h-[5px] rounded-full transition-transform duration-200 group-hover:scale-[2.5]',
-                  isEmergency
-                    ? 'bg-red-500 shadow-glow-danger animate-pulse'
-                    : ac.on_ground
-                      ? 'bg-gray-600'
-                      : 'bg-radar-400 shadow-glow',
-                )}
-              />
-              {/* Tooltip */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-2 bg-void-900/95 border border-hud-border rounded-lg text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-panel">
-                <div className="text-radar-400 font-semibold mb-0.5">
-                  {ac.callsign || ac.icao24.toUpperCase()}
-                </div>
-                {ac.baro_altitude && (
-                  <div className="text-gray-500">{formatAltitudeFeet(ac.baro_altitude)}</div>
-                )}
-                {ac.velocity && (
-                  <div className="text-gray-600">{formatSpeed(ac.velocity)}</div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Tracking count overlay */}
-      <div className="absolute top-3 right-3 px-3 py-2 rounded-lg bg-void-900/85 border border-hud-border backdrop-blur-sm">
-        <div className="text-[9px] font-mono text-gray-600 tracking-widest mb-0.5">TRACKING</div>
-        <div className="text-lg font-display font-bold text-radar-300 tabular-nums text-glow">
-          {formatNumber(aircraft.length)}
-        </div>
-      </div>
-    </div>
-  );
-}
 
