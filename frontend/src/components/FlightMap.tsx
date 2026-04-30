@@ -1,7 +1,7 @@
-import { useRef, useCallback, useEffect } from 'react';
-import Map, { Source, Layer, NavigationControl, ScaleControl } from 'react-map-gl/maplibre';
+import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
+import Map, { Source, Layer, NavigationControl, ScaleControl, Popup } from 'react-map-gl/maplibre';
 import type { MapRef } from 'react-map-gl/maplibre';
-import type { MapLayerMouseEvent } from 'maplibre-gl';
+import type { MapLayerMouseEvent, LngLatBoundsLike } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { cn, isEmergencySquawk } from '../utils';
 import type { EnrichedAircraft } from '../api/hooks';
@@ -16,10 +16,24 @@ interface FlightMapProps {
   className?: string;
 }
 
+
 export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: FlightMapProps) {
   const mapRef = useRef<MapRef>(null);
+  const [hoverInfo, setHoverInfo] = useState<{
+    icao24: string;
+    callsign: string;
+    longitude: number;
+    latitude: number;
+    altitude_ft: number | null;
+    speed_kts: number | null;
+    heading: number | null;
+    on_ground: boolean;
+    is_emergency: boolean;
+  } | null>(null);
+  const lastFlyToIcao24 = useRef<string | null>(null);
 
-  const geojson = {
+  // Memoize GeoJSON to avoid re-parsing on every render
+  const geojson = useMemo(() => ({
     type: 'FeatureCollection' as const,
     features: aircraft
       .filter((ac) => ac.latitude != null && ac.longitude != null)
@@ -37,10 +51,35 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         },
         geometry: {
           type: 'Point' as const,
-          coordinates: [ac.longitude, ac.latitude] as [number, number],
+          coordinates: [ac.longitude!, ac.latitude!] as [number, number],
         },
       })),
-  };
+  }), [aircraft]);
+
+  // Memoize selected aircraft to avoid double lookup
+  const selectedAc = useMemo(
+    () => selectedIcao24 ? aircraft.find((a) => a.icao24 === selectedIcao24) : null,
+    [selectedIcao24, aircraft],
+  );
+
+  // Compute bounds from aircraft positions on first load
+  const initialBounds = useMemo(() => {
+    const positioned = aircraft.filter((ac) => ac.latitude != null && ac.longitude != null);
+    if (positioned.length === 0) return null;
+    const lons = positioned.map((ac) => ac.longitude!);
+    const lats = positioned.map((ac) => ac.latitude!);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    // Add padding
+    const lonPad = Math.max((maxLon - minLon) * 0.1, 5);
+    const latPad = Math.max((maxLat - minLat) * 0.1, 3);
+    return [
+      [minLon - lonPad, minLat - latPad],
+      [maxLon + lonPad, maxLat + latPad],
+    ] as LngLatBoundsLike;
+  }, []); // Only on first aircraft batch — empty deps
 
   const handleClick = useCallback(
     (event: MapLayerMouseEvent) => {
@@ -53,10 +92,44 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
     [onSelect],
   );
 
-  // Fly to selected aircraft when selection changes
+  const handleHover = useCallback(
+    (event: MapLayerMouseEvent) => {
+      const feature = event.features?.[0];
+      if (!feature) {
+        setHoverInfo(null);
+        return;
+      }
+      const props = feature.properties;
+      setHoverInfo({
+        icao24: props.icao24 as string,
+        callsign: props.callsign as string,
+        longitude: event.lngLat.lng,
+        latitude: event.lngLat.lat,
+        altitude_ft: props.altitude_ft as number | null,
+        speed_kts: props.speed_kts as number | null,
+        heading: props.heading as number | null,
+        on_ground: props.on_ground as boolean,
+        is_emergency: props.is_emergency as boolean,
+      });
+      // Change cursor
+      const canvas = event.target.getCanvas();
+      canvas.style.cursor = 'pointer';
+    },
+    [],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setHoverInfo(null);
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = '';
+  }, []);
+
+  // Fly to selected aircraft when selection changes (guard against re-firing for same aircraft)
   useEffect(() => {
     if (!selectedIcao24 || !mapRef.current) return;
-    const ac = aircraft.find((a) => a.icao24 === selectedIcao24);
+    if (lastFlyToIcao24.current === selectedIcao24) return;
+    lastFlyToIcao24.current = selectedIcao24;
+    const ac = selectedAc;
     if (ac && ac.latitude != null && ac.longitude != null) {
       mapRef.current.flyTo({
         center: [ac.longitude, ac.latitude],
@@ -64,9 +137,14 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         duration: 1000,
       });
     }
-  }, [selectedIcao24, aircraft]);
+  }, [selectedIcao24, selectedAc]);
 
-  const selectedAc = selectedIcao24 ? aircraft.find((a) => a.icao24 === selectedIcao24) : null;
+  // Fit bounds on map load if we have aircraft
+  const handleLoad = useCallback(() => {
+    if (initialBounds && mapRef.current) {
+      mapRef.current.fitBounds(initialBounds, { padding: 40, duration: 0 });
+    }
+  }, [initialBounds]);
 
   return (
     <div className={cn('relative rounded-lg overflow-hidden', className)}>
@@ -79,9 +157,12 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         }}
         style={{ width: '100%', height: '100%' }}
         mapStyle={MAP_STYLE}
+        onLoad={handleLoad}
         onClick={handleClick}
+        onMouseMove={handleHover}
+        onMouseLeave={handleMouseLeave}
         interactiveLayerIds={['aircraft-points']}
-        attributionControl={false}
+        attributionControl={true}
       >
         <Source id="aircraft" type="geojson" data={geojson}>
           {/* Emergency halo */}
@@ -120,10 +201,11 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
               'circle-stroke-opacity': 0.4,
             }}
           />
-          {/* Callsign labels */}
+          {/* Callsign labels — only show at zoom >= 6 */}
           <Layer
             id="aircraft-labels"
             type="symbol"
+            minzoom={6}
             layout={{
               'text-field': ['get', 'label'],
               'text-size': 10,
@@ -141,7 +223,41 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         </Source>
 
         <NavigationControl position="top-right" />
-        <ScaleControl position="bottom-right" />
+        <ScaleControl position="bottom-left" />
+
+        {/* Hover popup */}
+        {hoverInfo && (
+          <Popup
+            longitude={hoverInfo.longitude}
+            latitude={hoverInfo.latitude}
+            anchor="bottom"
+            offset={[0, -8]}
+            closeOnClick={false}
+            closeButton={false}
+            className="flight-map-popup"
+          >
+            <div className="text-[11px] font-mono space-y-1">
+              <div className="font-semibold text-radar-400">
+                {hoverInfo.callsign || hoverInfo.icao24.toUpperCase()}
+              </div>
+              {hoverInfo.altitude_ft != null && (
+                <div className="text-gray-400">{hoverInfo.altitude_ft.toLocaleString()} ft</div>
+              )}
+              {hoverInfo.speed_kts != null && (
+                <div className="text-gray-500">{hoverInfo.speed_kts} kts</div>
+              )}
+              {hoverInfo.heading != null && (
+                <div className="text-gray-500">HDG {hoverInfo.heading}°</div>
+              )}
+              {hoverInfo.on_ground && (
+                <div className="text-gray-600">ON GROUND</div>
+              )}
+              {hoverInfo.is_emergency && (
+                <div className="text-red-400 font-semibold">⚠ EMERGENCY</div>
+              )}
+            </div>
+          </Popup>
+        )}
 
         {/* Selected aircraft highlight ring */}
         {selectedAc && selectedAc.latitude != null && selectedAc.longitude != null && (
@@ -173,7 +289,7 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
       </Map>
 
       {/* Overlay: Legend */}
-      <div className="absolute bottom-3 left-3 p-3 rounded-lg bg-void-900/90 border border-hud-border text-[10px] space-y-1.5 z-10">
+      <div className="absolute bottom-3 left-14 p-3 rounded-lg bg-void-900/90 border border-hud-border text-[10px] space-y-1.5 z-10">
         <div className="flex items-center gap-2">
           <div className="w-[6px] h-[6px] bg-radar-400 rounded-full shadow-glow" />
           <span className="text-gray-500 font-mono">AIRBORNE</span>
@@ -188,8 +304,8 @@ export function FlightMap({ aircraft, selectedIcao24, onSelect, className }: Fli
         </div>
       </div>
 
-      {/* Overlay: Count */}
-      <div className="absolute top-3 right-12 p-3 rounded-lg bg-void-900/90 border border-hud-border text-right z-10">
+      {/* Overlay: Count — moved to top-left to avoid nav control overlap */}
+      <div className="absolute top-3 left-3 p-3 rounded-lg bg-void-900/90 border border-hud-border text-right z-10">
         <div className="data-label text-[9px] mb-0.5">TRACKING</div>
         <div className="text-xl font-display font-bold text-radar-300 text-glow tabular-nums">
           {aircraft.length}

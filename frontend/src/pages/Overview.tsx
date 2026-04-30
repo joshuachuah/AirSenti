@@ -549,7 +549,7 @@ export function Overview() {
               <div className="flex items-center gap-3">
                 <div className="w-1.5 h-1.5 rounded-full bg-radar-400 animate-pulse shadow-glow" />
                 <h2 className="font-display font-bold text-sm text-gray-200 tracking-[0.1em]">
-                  LIVE TRACKING
+                  FLIGHT TRACKER
                 </h2>
                 <span className="text-[10px] font-mono text-gray-600 bg-white/[0.03] px-2 py-0.5 rounded">
                   {formatNumber(aircraft.length)} targets
